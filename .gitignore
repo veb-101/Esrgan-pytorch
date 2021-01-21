@@ -7,5 +7,5 @@ images/lr/*
 images_og/*
 samples/*
 checkpoints/*
-# images/hr.zip
+images/hr.zip
 *.tar
