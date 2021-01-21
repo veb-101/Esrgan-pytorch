@@ -79,7 +79,7 @@ class Trainer:
 
         for epoch in range(self.start_epoch, self.start_epoch + self.num_epoch):
 
-            steps_completed = self.start_epoch * total_step
+            steps_completed = self.start_epoch+1 * total_step
 
             if not os.path.exists(os.path.join(self.sample_dir, str(epoch))):
                 os.makedirs(os.path.join(self.sample_dir, str(epoch)))
