@@ -1,0 +1,12 @@
+__pycache__/*
+.virtual_documents/*
+*.jpg
+# *.png
+images/hr/*
+images/lr/*
+images_og/*
+samples/*
+checkpoints/*
+images/hr.zip
+images/lr.zip
+*.tar
