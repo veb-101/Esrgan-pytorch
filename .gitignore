@@ -8,5 +8,4 @@ images_og/*
 samples/*
 checkpoints/*
 images/hr.zip
-images/lr.zip
 *.tar
