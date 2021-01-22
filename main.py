@@ -1,31 +1,4 @@
-import os
-import random
-from PIL import Image
-import numpy as np
-
-import torch
-from torch.utils.data import Dataset, DataLoader
-import torchvision.transforms.functional as TF
-import importlib
-
-
-seed = 41
-random.seed(seed)
-np.random.seed(seed)
-torch.manual_seed(seed)
-
-
-def get_default_device():
-    """Pick GPU if available, else CPU"""
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    else:
-        return torch.device("cpu")
-
-
-device = get_default_device()
-
-
+import train
 import os
 import random
 from PIL import Image
@@ -55,23 +28,34 @@ device = get_default_device()
 
 
 class ESR_Dataset(Dataset):
-    def __init__(self, num_images=9000, path=r"images", train=True):
+    def __init__(self, num_images=9000, path=r"images", train=True, image_range=None):
         self.path = path
+        self.is_train = train
 
         if not os.path.exists(self.path):
             raise Exception(f"[!] dataset is not exited")
 
+        self.image_paths = os.listdir(os.path.join(self.path, "hr"))
+        self.image_range = image_range if image_range else (0, len(self.image_paths))
+        if len(self.image_range) == 1:
+            if self.is_train:
+                self.image_range = (0, self.image_range[0])
+            else:
+                self.image_range = (self.image_range[0], len(self.image_paths))
+
+        self.start = self.image_range[0]
+        self.end = self.image_range[1]
+
         self.image_file_name = sorted(
             np.random.choice(
-                os.listdir(os.path.join(self.path, "hr")),
-                size=num_images,
-                replace=False,
+                self.image_paths[self.start: self.end], size=num_images, replace=False,
             )
         )
-        # self.mean = np.array([0.485, 0.456, 0.406])
-        # self.std = np.array([0.229, 0.224, 0.225])
-        self.mean = np.array([0.5, 0.5, 0.5])
-        self.std = np.array([0.5, 0.5, 0.5])
+
+        self.mean = np.array([0.485, 0.456, 0.406])
+        self.std = np.array([0.229, 0.224, 0.225])
+        # self.mean = np.array([0.5, 0.5, 0.5])
+        # self.std = np.array([0.5, 0.5, 0.5])
 
     def __getitem__(self, item):
         file_name = self.image_file_name[item]
@@ -82,7 +66,7 @@ class ESR_Dataset(Dataset):
             "RGB"
         )
 
-        if train:
+        if self.is_train:
             if random.random() > 0.5:
                 high_resolution = TF.vflip(high_resolution)
                 low_resolution = TF.vflip(low_resolution)
@@ -98,11 +82,8 @@ class ESR_Dataset(Dataset):
         high_resolution = TF.to_tensor(high_resolution)
         low_resolution = TF.to_tensor(low_resolution)
 
-        # high_resolution = TF.normalize(high_resolution, self.mean, self.std)
-        # high_resolution = TF.normalize(high_resolution, self.mean, self.std)
-
-        # high_resolution = TF.normalize(high_resolution, self.mean, self.std)
-        # low_resolution = TF.normalize(low_resolution, self.mean, self.std)
+        high_resolution = TF.normalize(high_resolution, self.mean, self.std)
+        low_resolution = TF.normalize(low_resolution, self.mean, self.std)
 
         images = {"lr": low_resolution, "hr": high_resolution}
 
@@ -122,7 +103,7 @@ config = {
     "sample_dir": "./samples",
     "workers": 6,
     "scale_factor": 4,
-    "num_rrdn_blocks": 11,
+    "num_rrdn_blocks": 12,
     "nf": 32,
     "gc": 32,
     "b1": 0.9,
@@ -146,7 +127,6 @@ config = {
     "load_previous_opt": True,
 }
 
-import train
 
 importlib.reload(train)
 
@@ -165,8 +145,14 @@ config["is_psnr_oriented"] = True
 config["load_previous_opt"] = True
 
 
+esr_dataset_train = ESR_Dataset(
+    num_images=9000, path=r"./images", train=True, image_range=(11000,)
+)
 
-esr_dataset_train = ESR_Dataset(num_images=9000, path=r"./images", train=True)
+esr_dataset_val = ESR_Dataset(
+    num_images=config["batch_size"], path=r"./images", train=False, image_range=(11000,)
+)
+
 esr_dataloader_train = DataLoader(
     esr_dataset_train,
     config["batch_size"],
@@ -175,17 +161,19 @@ esr_dataloader_train = DataLoader(
     shuffle=True,
 )
 
-esr_dataset_val = ESR_Dataset(num_images=config["batch_size"], path=r"./images", train=False)
 esr_dataloader_val = DataLoader(
-    esr_dataset_val, config["batch_size"], num_workers=config["workers"], pin_memory=pin,
+    esr_dataset_val,
+    config["batch_size"],
+    num_workers=config["workers"],
+    pin_memory=pin,
 )
 
-for key, value in config.items():
-    print(f"{key:30}: {value}")
+# for key, value in config.items():
+#     print(f"{key:30}: {value}")
 
 print("\n\n\n")
 print(f"ESRGAN start")
 
-torch.cuda.empty_cache()
-trainer = train.Trainer(config, esr_dataloader_train, esr_dataloader_val, device)
-train_metrics = trainer.train()
+# torch.cuda.empty_cache()
+# trainer = train.Trainer(config, esr_dataloader_train, esr_dataloader_val, device)
+# train_metrics = trainer.train()

@@ -4,21 +4,38 @@ import cv2
 import torch
 
 
+# def denormalize(tensors):
+#     """Normalization parameters for pre-trained PyTorch models
+#      Denormalizes image tensors using mean and std """
+#     mean = np.array([0.485, 0.456, 0.406])
+#     std = np.array([0.229, 0.224, 0.225])
+
+#     tensors = tensors.clone().detach()
+# tensors = tensors.permute(0, 2, 3, 1).numpy()
+# # row, height, width, channel
+
+# with torch.no_grad():
+#     for image in tensors:
+#         for c in range(3):
+#             np.add(np.multiply(image[:, :, c], std[c]), mean[c])
+
+# # row, channel, height, width
+# tensors = np.moveaxis(tensors, (0, 3, 1, 2), (0, 1, 2, 3))
+# # print(tensors.shape)
+# return torch.from_numpy(np.clip(tensors, 0, 255))
+
 def denormalize(tensors):
-    # mean = np.array([0.485, 0.456, 0.406])
-    # std = np.array([0.229, 0.224, 0.225])
-    # for c in range(3):
-    #     # tensors[:, c].mul_(std[c]).add_(mean[c])
-    #     tensors[:, c] = tensors[:, c]
-    # return torch.clamp(tensors, 0, 1
-    mean = np.array([0.5, 0.5, 0.5])
-    std = np.array([0.5, 0.5, 0.5])
+    """Normalization parameters for pre-trained PyTorch models
+     Denormalizes image tensors using mean and std """
+    mean = np.array([0.485, 0.456, 0.406])
+    std = np.array([0.229, 0.224, 0.225])
 
-    """ Denormalizes image tensors using mean and std """
+    tensors = tensors.clone().detach()
     with torch.no_grad():
-        out = (tensors.numpy() + 1) / 2
-
-    return torch.from_numpy(np.clip(out, 0, 1))
+        for c in range(3):
+            tensors[:, c].mul_(std[c]).add_(mean[c])
+        # print(tensors.min(), tensors.max())
+        return torch.clamp(tensors, 0, 255)
 
 
 def ssim(img1, img2):
@@ -80,11 +97,11 @@ def cal_img_metrics(gen, ground):
     with torch.no_grad():
         scores_PSNR = []
         scores_SSIM = []
-        # gen = denormalize(gen).permute(0, 2, 3, 1).numpy() * 255.0
-        # ground = denormalize(ground).permute(0, 2, 3, 1).numpy() * 255.0
+        gen = denormalize(gen).permute(0, 2, 3, 1).numpy() * 255.0
+        ground = denormalize(ground).permute(0, 2, 3, 1).numpy() * 255.0
 
-        gen = gen.permute(0, 2, 3, 1).numpy() * 255.0
-        ground = ground.permute(0, 2, 3, 1).numpy() * 255.0
+        # gen = gen.permute(0, 2, 3, 1).numpy() * 255.0
+        # ground = ground.permute(0, 2, 3, 1).numpy() * 255.0
 
         for generated, ground_truth in zip(gen, ground):
             # print(ground_truth.max() - ground_truth.min())

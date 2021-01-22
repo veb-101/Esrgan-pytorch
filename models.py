@@ -11,24 +11,19 @@ from torchvision.models import vgg19
 
 class PerceptualLoss(nn.Module):
     def __init__(self):
-        super().__init__()
+        super(PerceptualLoss, self).__init__()
 
         vgg = vgg19(pretrained=True)
         loss_network = nn.Sequential(*list(vgg.features)[:35]).eval()
-
         for param in loss_network.parameters():
             param.requires_grad = False
-
         self.loss_network = loss_network
-
         self.l1_loss = nn.L1Loss()
 
     def forward(self, high_resolution, fake_high_resolution):
-        with torch.no_grad():
-            perception_loss = self.l1_loss(
-                self.loss_network(high_resolution).detach(),
-                self.loss_network(fake_high_resolution),
-            )
+        perception_loss = self.l1_loss(
+            self.loss_network(high_resolution), self.loss_network(fake_high_resolution)
+        )
         return perception_loss
 
 
@@ -98,7 +93,8 @@ class Generator(nn.Module):
 
         # first layer
         self.conv1 = nn.Sequential(
-            nn.Conv2d(channels, nf, kernel_size=3, stride=1, padding=1)
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(channels, nf, kernel_size=3, stride=1)
         )
 
         # trunk
@@ -108,7 +104,8 @@ class Generator(nn.Module):
 
         # Second conv layer post residual blocks
         self.conv2 = nn.Sequential(
-            nn.Conv2d(nf, nf, kernel_size=3, stride=1, padding=1)
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(nf, nf, kernel_size=3, stride=1)
         )
 
         # Upsampling layers
@@ -117,7 +114,8 @@ class Generator(nn.Module):
         for _ in range(scale_factor):
             upsample_layers.append(
                 nn.Sequential(
-                    nn.Conv2d(nf, nf * 4, kernel_size=3, stride=1, padding=1),
+                    nn.ReflectionPad2d(1),
+                    nn.Conv2d(nf, nf * 4, kernel_size=3, stride=1),
                     nn.LeakyReLU(),
                     nn.PixelShuffle(upscale_factor=2),
                 )
@@ -127,9 +125,11 @@ class Generator(nn.Module):
 
         # Final block
         self.conv3 = nn.Sequential(
-            nn.Conv2d(nf, nf, kernel_size=3, stride=1, padding=1),
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(nf, nf, kernel_size=3, stride=1),
             nn.LeakyReLU(),
-            nn.Conv2d(nf, channels, kernel_size=3, stride=1, padding=1),
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(nf, channels, kernel_size=3, stride=1),
         )
 
         self.layers_ = [self.conv1, self.conv2, *upsample_layers, self.conv3]
@@ -164,13 +164,15 @@ class Discriminator(nn.Module):
         def discriminator_block(in_filters, out_filters, first_block=False):
             layers = []
             layers.append(
-                nn.Conv2d(in_filters, out_filters, kernel_size=3, stride=1, padding=1)
+                nn.ReflectionPad2d(1),
+                nn.Conv2d(in_filters, out_filters, kernel_size=3, stride=1, bias=False)
             )
             if not first_block:
                 layers.append(nn.BatchNorm2d(out_filters))
             layers.append(nn.LeakyReLU(0.2, inplace=True))
             layers.append(
-                nn.Conv2d(out_filters, out_filters, kernel_size=3, stride=2, padding=1)
+                nn.ReflectionPad2d(1),
+                nn.Conv2d(out_filters, out_filters, kernel_size=3, stride=2, bias=False)
             )
             layers.append(nn.BatchNorm2d(out_filters))
             layers.append(nn.LeakyReLU(0.2, inplace=True))
@@ -184,7 +186,10 @@ class Discriminator(nn.Module):
             )
             in_filters = out_filters
 
-        layers.append(nn.Conv2d(out_filters, 1, kernel_size=3, stride=1, padding=1))
+        layers.append(nn.Sequential(
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(out_filters, 1, kernel_size=3, stride=1, bias=False))
+        )
 
         self.model = nn.Sequential(*layers)
 
@@ -202,12 +207,10 @@ class Discriminator(nn.Module):
 if __name__ == "__main__":
     from torchsummary import summary
 
-    model = Generator(num_res_blocks=11, nf=32, gc=32)
-    model._mrsa_init(model.layers_)
+    # model = Generator(num_res_blocks=12, nf=32, gc=32)
+    # model._mrsa_init(model.layers_)
     # summary(model, (3, 128, 128))
 
     # model = Discriminator()
     # print(model.output_shape)
     # summary(model, (3, 512, 512))
-
-    summary(FeatureExtractor(), (3, 512, 512))

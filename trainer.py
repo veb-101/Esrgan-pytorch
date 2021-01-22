@@ -1,17 +1,19 @@
 import os
+import shutil
 from glob import glob
 import numpy as np
+import gc
+
 import torch
 import torch.nn as nn
+from torch.cuda import amp
 from torch.optim.adam import Adam
 from torch.autograd import Variable
+
 from torchvision.utils import save_image
+
 from models import PerceptualLoss, Generator, Discriminator
-import shutil
-import cv2
-from utils import cal_img_metrics
-import gc
-from torch.cuda import amp
+from utils import cal_img_metrics, denormalize
 
 
 class Trainer:
@@ -71,13 +73,12 @@ class Trainer:
         content_criterion = nn.L1Loss().to(self.device)
         perception_criterion = PerceptualLoss().to(self.device)
 
-        self.generator.train()
-        self.discriminator.train()
-
         steps_completed = 0
         Tensor = torch.cuda.FloatTensor if torch.cuda.is_available() else torch.Tensor
 
         for epoch in range(self.start_epoch, self.start_epoch + self.num_epoch):
+            self.generator.train()
+            self.discriminator.train()
 
             steps_completed = (self.start_epoch + 1) * total_step
 
@@ -114,7 +115,6 @@ class Trainer:
                 self.optimizer_generator.zero_grad()
 
                 with amp.autocast():
-
                     fake_high_resolution = self.generator(low_resolution)
 
                     # Content loss - L1 loss - psnr oriented
@@ -123,7 +123,8 @@ class Trainer:
                     )
 
                     if not self.is_psnr_oriented:
-                        score_real = self.discriminator(high_resolution)
+                        # Extract validity predictions from discriminator
+                        score_real = self.discriminator(high_resolution).detach()
                         score_fake = self.discriminator(fake_high_resolution)
 
                         # ----------------------
@@ -137,9 +138,7 @@ class Trainer:
                         adversarial_loss_fr = adversarial_criterion(
                             discriminator_fr, real_labels
                         )
-                        adversarial_loss = (
-                            adversarial_loss_fr + adversarial_loss_rf
-                        ) / 2
+                        adversarial_loss = (adversarial_loss_fr + adversarial_loss_rf) / 2
                         # ----------------------
 
                         # Perceptual loss - VGG loss before activations
@@ -148,8 +147,8 @@ class Trainer:
                         )
 
                         generator_loss = (
-                            adversarial_loss * self.adversarial_loss_factor
-                            + perceptual_loss * self.perceptual_loss_factor
+                            perceptual_loss * self.perceptual_loss_factor
+                            + adversarial_loss * self.adversarial_loss_factor
                             + content_loss * self.content_loss_factor
                         )
 
@@ -162,11 +161,11 @@ class Trainer:
                 # self.optimizer_generator.step()
 
                 self.metrics["gen_loss"].append(
-                    np.round(generator_loss.detach().cpu().item(), 5)
+                    np.round(generator_loss.detach().item(), 5)
                 )
                 self.metrics["con_loss"].append(
                     np.round(
-                        content_loss.detach().cpu().item() * self.content_loss_factor, 4
+                        content_loss.detach().item() * self.content_loss_factor, 4
                     )
                 )
                 torch.cuda.empty_cache()
@@ -177,6 +176,10 @@ class Trainer:
                 ##########################
                 if not self.is_psnr_oriented:
                     self.optimizer_discriminator.zero_grad()
+
+                    # with torch.no_grad():
+                    #     with amp.autocast():
+                    #         fake_high_resolution = self.generator(low_resolution)
 
                     with amp.autocast():
                         score_real = self.discriminator(high_resolution)
@@ -194,9 +197,7 @@ class Trainer:
                         adversarial_loss_fr = adversarial_criterion(
                             discriminator_fr, fake_labels
                         )
-                        discriminator_loss = (
-                            adversarial_loss_fr + adversarial_loss_rf
-                        ) / 2
+                        discriminator_loss = (adversarial_loss_fr + adversarial_loss_rf) / 2
 
                     self.scaler_dis.scale(discriminator_loss).backward()
                     self.scaler_dis.step(self.optimizer_discriminator)
@@ -205,20 +206,20 @@ class Trainer:
                     # self.optimizer_discriminator.step()
 
                     self.metrics["dis_loss"].append(
-                        np.round(discriminator_loss.cpu().detach().item(), 5)
+                        np.round(discriminator_loss.detach().item(), 5)
                     )
 
                     # generator metrics
                     self.metrics["adv_loss"].append(
                         np.round(
-                            adversarial_loss.detach().cpu().item()
+                            adversarial_loss.detach().item()
                             * self.adversarial_loss_factor,
                             4,
                         )
                     )
                     self.metrics["per_loss"].append(
                         np.round(
-                            perceptual_loss.detach().cpu().item()
+                            perceptual_loss.detach().item()
                             * self.perceptual_loss_factor,
                             4,
                         )
@@ -228,29 +229,32 @@ class Trainer:
                     if not self.is_psnr_oriented:
                         print(
                             f"[Epoch {epoch}/{self.start_epoch+self.num_epoch-1}] [Batch {step+1}/{total_step}]"
-                            f"[D loss {self.metrics['dis_loss'][-1]}] [G loss {self.metrics['gen_loss'][-1]}]"
-                            f"[adversarial loss {self.metrics['adv_loss'][-1]}]"
-                            f"[perceptual loss {self.metrics['per_loss'][-1]}]"
-                            f"[content loss {self.metrics['con_loss'][-1]}]"
+                            f"[D loss {np.array(self.metrics['dis_loss']).mean()}] [G loss {np.array(self.metrics['gen_loss']).mean()}]"
+                            f"[adversarial loss {np.array(self.metrics['adv_loss']).mean()}]"
+                            f"[perceptual loss {np.array(self.metrics['per_loss']).mean()}]"
+                            f"[content loss {np.array(self.metrics['con_loss']).mean()}]"
                             f""
                         )
                     else:
                         print(
                             f"[Epoch {epoch}/{self.start_epoch+self.num_epoch-1}] [Batch {step+1}/{total_step}] "
-                            f"[content loss {self.metrics['con_loss'][-1]}]"
+                            f"[content loss {np.array(self.metrics['con_loss']).mean()}]"
                         )
 
                     result = torch.cat(
                         (
-                            high_resolution.cpu().detach(),
-                            fake_high_resolution.cpu().detach(),
+                            denormalize(high_resolution.detach().cpu()),
+                            denormalize(fake_high_resolution.detach().cpu()),
                         ),
                         2,
                     )
-                    # print(f"result:", result[0].min(), result[0].max())
+                    # print(result[0][:, 512:, :].min(), result[0][:, 512:, :].max())
+
                     save_image(
-                        result.clamp(0.0, 1.0),
-                        os.path.join(self.sample_dir, str(epoch), f"ESR_{step}.png"),
+                        result,
+                        os.path.join(self.sample_dir, str(epoch), f"ESR_{step+1}.png"),
+                        nrow=4,
+                        normalize=False,
                     )
                 torch.cuda.empty_cache()
                 gc.collect()
@@ -259,32 +263,35 @@ class Trainer:
             for image_val in self.data_loader_val:
                 val_low_resolution = image_val["lr"].to(self.device)
                 val_high_resolution = image_val["hr"].to(self.device)
+
+                self.generator.eval()
                 with torch.no_grad():
                     with amp.autocast():
-                        val_fake_high_res = self.generator(val_low_resolution)
+                        val_fake_high_res = self.generator(val_low_resolution).detach()
 
                     # image metrics PSNR and SSIM
                     val_psnr, val_ssim = cal_img_metrics(
-                        val_fake_high_res.cpu().detach(),
-                        val_high_resolution.cpu().detach(),
+                        val_fake_high_res.detach().cpu(),
+                        val_high_resolution.detach().cpu(),
                     )
                     self.metrics["PSNR"].append(val_psnr)
                     self.metrics["SSIM"].append(val_ssim)
+                    print(f"Validation Set: PSNR: {val_psnr}, SSIM:{val_ssim}")
 
                     result_val = torch.cat(
                         (
-                            val_high_resolution.cpu().detach(),
-                            val_fake_high_res.cpu().detach(),
+                            denormalize(val_high_resolution).detach().cpu(),
+                            denormalize(val_fake_high_res).detach().cpu(),
                         ),
                         2,
                     )
-                    # print(f"result_val:", result_val[0].min(), result_val[0].max())
                     save_image(
-                        result_val.clamp(0.0, 1.0),
+                        result_val,
                         os.path.join(self.sample_dir, f"Validation_{epoch}.png"),
+                        nrow=4,
+                        normalize=False,
                     )
-
-                print(f"Validation Set: PSNR: {val_psnr}, SSIM:{val_ssim}")
+                    # print(result[0][:, 512:, :].min(), result[0][:, 512:, :].max())
 
             self.lr_scheduler_generator.step()
             if not self.is_psnr_oriented:
