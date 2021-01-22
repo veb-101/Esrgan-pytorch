@@ -229,16 +229,16 @@ class Trainer:
                     if not self.is_psnr_oriented:
                         print(
                             f"[Epoch {epoch}/{self.start_epoch+self.num_epoch-1}] [Batch {step+1}/{total_step}]"
-                            f"[D loss {np.array(self.metrics['dis_loss']).mean()}] [G loss {np.array(self.metrics['gen_loss']).mean()}]"
-                            f"[adversarial loss {np.array(self.metrics['adv_loss']).mean()}]"
-                            f"[perceptual loss {np.array(self.metrics['per_loss']).mean()}]"
-                            f"[content loss {np.array(self.metrics['con_loss']).mean()}]"
+                            f"[D loss {np.round(np.array(self.metrics['dis_loss']).mean(), 4)}] [G loss {np.round(np.array(self.metrics['gen_loss']).mean(), 4)}]"
+                            f"[adversarial loss {np.round(np.array(self.metrics['adv_loss']).mean(), 4)}]"
+                            f"[perceptual loss {np.round(np.array(self.metrics['per_loss']).mean(), 4)}]"
+                            f"[content loss {np.round(np.array(self.metrics['con_loss']).mean(), 4)}]"
                             f""
                         )
                     else:
                         print(
                             f"[Epoch {epoch}/{self.start_epoch+self.num_epoch-1}] [Batch {step+1}/{total_step}] "
-                            f"[content loss {np.array(self.metrics['con_loss']).mean()}]"
+                            f"[content loss {np.round(np.array(self.metrics['con_loss']).mean(), 4)}]"
                         )
 
                     result = torch.cat(

@@ -163,17 +163,17 @@ class Discriminator(nn.Module):
 
         def discriminator_block(in_filters, out_filters, first_block=False):
             layers = []
-            layers.append(
+            layers.append(nn.Sequential(
                 nn.ReflectionPad2d(1),
-                nn.Conv2d(in_filters, out_filters, kernel_size=3, stride=1, bias=False)
+                nn.Conv2d(in_filters, out_filters, kernel_size=3, stride=1, bias=False))
             )
             if not first_block:
                 layers.append(nn.BatchNorm2d(out_filters))
             layers.append(nn.LeakyReLU(0.2, inplace=True))
-            layers.append(
+            layers.append(nn.Sequential(
                 nn.ReflectionPad2d(1),
                 nn.Conv2d(out_filters, out_filters, kernel_size=3, stride=2, bias=False)
-            )
+            ))
             layers.append(nn.BatchNorm2d(out_filters))
             layers.append(nn.LeakyReLU(0.2, inplace=True))
             return layers
