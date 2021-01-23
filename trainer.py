@@ -282,17 +282,17 @@ class Trainer:
             # epoch metrics
             if not self.is_psnr_oriented:
                 print(
-                    f"Epoch: {epoch} -> Dis loss: {np.round(np.array(epoch_dis_loss).mean(), 4)}"
-                    f"Gen loss: {np.round(np.array(epoch_gen_loss).mean(), 4)}"
-                    f"Per loss:: {np.round(np.array(epoch_per_loss).mean(), 4)}"
-                    f"Adv loss:: {np.round(np.array(epoch_adv_loss).mean(), 4)}"
+                    f"Epoch: {epoch} -> Dis loss: {np.round(np.array(epoch_dis_loss).mean(), 4)} "
+                    f"Gen loss: {np.round(np.array(epoch_gen_loss).mean(), 4)} "
+                    f"Per loss:: {np.round(np.array(epoch_per_loss).mean(), 4)} "
+                    f"Adv loss:: {np.round(np.array(epoch_adv_loss).mean(), 4)} "
                     f"Con loss:: {np.round(np.array(epoch_con_loss).mean(), 4)}"
                     f""
                 )
             else:
                 print(
                     f"Epoch: {epoch} -> "
-                    f"Gen loss: {np.round(np.array(epoch_gen_loss).mean(), 4)}"
+                    f"Gen loss: {np.round(np.array(epoch_gen_loss).mean(), 4)} "
                     f"Con loss:: {np.round(np.array(epoch_con_loss).mean(), 4)}"
                     f""
                 )
@@ -325,8 +325,8 @@ class Trainer:
                     val_batch_psnr.append(val_psnr)
                     val_batch_ssim.append(val_ssim)
 
-            val_epoch_psnr = len(val_batch_psnr)/sum(val_batch_psnr)
-            val_epoch_ssim = len(val_batch_ssim)/sum(val_batch_ssim)
+            val_epoch_psnr = sum(val_batch_psnr)/len(val_batch_psnr)
+            val_epoch_ssim = sum(val_batch_ssim)/len(val_batch_ssim)
 
             self.metrics["PSNR"].append(val_epoch_psnr)
             self.metrics["SSIM"].append(val_epoch_ssim)
