@@ -2,14 +2,15 @@ import os
 import shutil
 import cv2
 import random
-
+import gc
 
 HR_FOLDER = r"images/hr"
 LR_FOLDER = r"images/lr"
 
 ROOT_DIR = r"images_og"
-HR_SIZE = 512
-TAKE = 4
+HR_SIZE = 256
+LR_SIZE = 64
+TAKE = 5
 start = 0
 
 folder = os.listdir(ROOT_DIR)
@@ -47,13 +48,13 @@ for idx, image_name in enumerate(sorted(folder)):
 
         image_ = raw_image[w_start:w_end, h_start:h_end]
         assert image_.shape == (
-            512,
-            512,
+            HR_SIZE,
+            HR_SIZE,
             3,
         ), f"lol noob, {image_name}, {w_end - w_start, h_end - h_start}"
 
         new_image_name = f"{start:05}.png"
-        bicubic_image = cv2.resize(image_, (128, 128), cv2.INTER_CUBIC)
+        bicubic_image = cv2.resize(image_, (LR_SIZE, LR_SIZE), cv2.INTER_CUBIC)
 
         cv2.imwrite(os.path.join(HR_FOLDER, new_image_name), image_)
         cv2.imwrite(os.path.join(LR_FOLDER, new_image_name), bicubic_image)
@@ -62,5 +63,6 @@ for idx, image_name in enumerate(sorted(folder)):
         del image_
 
     del raw_image
-
-    print(f"Images Completed: {idx}/{length}", end="\r")
+    gc.collect()
+    if not idx % 100:
+        print(f"Images Completed: {idx}/{length}", end="\r")

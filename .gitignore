@@ -1,12 +1,12 @@
 __pycache__/*
 .virtual_documents/*
 *.jpg
-# *.png
-images/hr/*
-images/lr/*
-images_og/*
+*.png
+*.zip
+*.tar
+*.rar
 samples/*
 checkpoints/*
-images/hr.zip
 *.tar
 train (1).py
+.ipynb_*

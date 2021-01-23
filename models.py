@@ -93,8 +93,7 @@ class Generator(nn.Module):
 
         # first layer
         self.conv1 = nn.Sequential(
-            nn.ReflectionPad2d(1),
-            nn.Conv2d(channels, nf, kernel_size=3, stride=1)
+            nn.ReflectionPad2d(1), nn.Conv2d(channels, nf, kernel_size=3, stride=1)
         )
 
         # trunk
@@ -104,8 +103,7 @@ class Generator(nn.Module):
 
         # Second conv layer post residual blocks
         self.conv2 = nn.Sequential(
-            nn.ReflectionPad2d(1),
-            nn.Conv2d(nf, nf, kernel_size=3, stride=1)
+            nn.ReflectionPad2d(1), nn.Conv2d(nf, nf, kernel_size=3, stride=1)
         )
 
         # Upsampling layers
@@ -163,17 +161,25 @@ class Discriminator(nn.Module):
 
         def discriminator_block(in_filters, out_filters, first_block=False):
             layers = []
-            layers.append(nn.Sequential(
-                nn.ReflectionPad2d(1),
-                nn.Conv2d(in_filters, out_filters, kernel_size=3, stride=1, bias=False))
+            layers.append(
+                nn.Sequential(
+                    nn.ReflectionPad2d(1),
+                    nn.Conv2d(
+                        in_filters, out_filters, kernel_size=3, stride=1, bias=False
+                    ),
+                )
             )
             if not first_block:
                 layers.append(nn.BatchNorm2d(out_filters))
             layers.append(nn.LeakyReLU(0.2, inplace=True))
-            layers.append(nn.Sequential(
-                nn.ReflectionPad2d(1),
-                nn.Conv2d(out_filters, out_filters, kernel_size=3, stride=2, bias=False)
-            ))
+            layers.append(
+                nn.Sequential(
+                    nn.ReflectionPad2d(1),
+                    nn.Conv2d(
+                        out_filters, out_filters, kernel_size=3, stride=2, bias=False
+                    ),
+                )
+            )
             layers.append(nn.BatchNorm2d(out_filters))
             layers.append(nn.LeakyReLU(0.2, inplace=True))
             return layers
@@ -186,9 +192,11 @@ class Discriminator(nn.Module):
             )
             in_filters = out_filters
 
-        layers.append(nn.Sequential(
-            nn.ReflectionPad2d(1),
-            nn.Conv2d(out_filters, 1, kernel_size=3, stride=1, bias=False))
+        layers.append(
+            nn.Sequential(
+                nn.ReflectionPad2d(1),
+                nn.Conv2d(out_filters, 1, kernel_size=3, stride=1, bias=False),
+            )
         )
 
         self.model = nn.Sequential(*layers)
@@ -207,10 +215,10 @@ class Discriminator(nn.Module):
 if __name__ == "__main__":
     from torchsummary import summary
 
-    # model = Generator(num_res_blocks=12, nf=32, gc=32)
-    # model._mrsa_init(model.layers_)
-    # summary(model, (3, 128, 128))
+    model = Generator(num_res_blocks=18, nf=64, gc=32)
+    model._mrsa_init(model.layers_)
+    summary(model, (3, 64, 64))
 
-    # model = Discriminator()
+    model = Discriminator()
     # print(model.output_shape)
-    # summary(model, (3, 512, 512))
+    summary(model, (3, 256, 256))

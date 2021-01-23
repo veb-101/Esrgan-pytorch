@@ -28,7 +28,7 @@ device = get_default_device()
 
 
 class ESR_Dataset(Dataset):
-    def __init__(self, num_images=9000, path=r"images", train=True, image_range=None):
+    def __init__(self, num_images=9000, path=r"images", train=True):
         self.path = path
         self.is_train = train
 
@@ -36,21 +36,17 @@ class ESR_Dataset(Dataset):
             raise Exception(f"[!] dataset is not exited")
 
         self.image_paths = os.listdir(os.path.join(self.path, "hr"))
-        self.image_range = image_range if image_range else (0, len(self.image_paths))
-        if len(self.image_range) == 1:
-            if self.is_train:
-                self.image_range = (0, self.image_range[0])
-            else:
-                self.image_range = (self.image_range[0], len(self.image_paths))
+        # self.image_range = image_range if image_range else (0, len(self.image_paths))
+        # if len(self.image_range) == 1:
+        #     if self.is_train:
+        #         self.image_range = (0, self.image_range[0])
+        #     else:
+        #         self.image_range = (self.image_range[0], len(self.image_paths))
 
-        self.start = self.image_range[0]
-        self.end = self.image_range[1]
+        # self.start = self.image_range[0]
+        # self.end = self.image_range[1]
 
-        self.image_file_name = sorted(
-            np.random.choice(
-                self.image_paths[self.start: self.end], size=num_images, replace=False,
-            )
-        )
+        self.image_file_name = np.random.choice(self.image_paths, size=num_images, replace=False)
 
         self.mean = np.array([0.485, 0.456, 0.406])
         self.std = np.array([0.229, 0.224, 0.225])
@@ -94,31 +90,30 @@ class ESR_Dataset(Dataset):
 
 
 config = {
-    "image_size": 512,
-    "batch_size": 12,
+    "image_size": 256,
+    "batch_size": 16,
     "start_epoch": 0,
-    "num_epoch": 20,
+    "num_epoch": 100,
     "sample_batch_size": 1,
-    "checkpoint_dir": "./checkpoints",
     "sample_dir": "./samples",
     "workers": 6,
     "scale_factor": 4,
-    "num_rrdn_blocks": 12,
-    "nf": 32,
+    "num_rrdn_blocks": 18,
+    "nf": 64,
     "gc": 32,
     "b1": 0.9,
     "b2": 0.999,
     "weight_decay": 1e-2,
     # ------ PSNR ------
     "p_lr": 2e-4,
-    "p_decay_iter": [4, 8, 12, 16],
+    "p_decay_iter": [20, 40, 60, 80],
     "p_perceptual_loss_factor": 0,
     "p_adversarial_loss_factor": 0,
     "p_content_loss_factor": 1,
     # ------------------
     # ------ ADVR ------
     "g_lr": 1e-4,
-    "g_decay_iter": [10, 20, 35, 50],
+    "g_decay_iter": [20, 40, 60, 80],
     "g_perceptual_loss_factor": 1,
     "g_adversarial_loss_factor": 5e-3,
     "g_content_loss_factor": 1e-2,
@@ -137,21 +132,18 @@ if not os.path.exists(config["sample_dir"]):
 pin = torch.cuda.is_available()
 
 
-config["start_epoch"] = 2
-config["num_epoch"] = 10
-config["batch_size"] = 12
+config["start_epoch"] = 0
+config["num_epoch"] = 100
+config["batch_size"] = 16
 config["is_psnr_oriented"] = True
-# for loading last ran checkpoint optimizers parameters
 config["load_previous_opt"] = True
 
 
 esr_dataset_train = ESR_Dataset(
-    num_images=9000, path=r"./images", train=True, image_range=(11000,)
-)
+    num_images=9000, path=r"./images/train", train=True)
 
 esr_dataset_val = ESR_Dataset(
-    num_images=config["batch_size"], path=r"./images", train=False, image_range=(11000,)
-)
+    num_images=64, path=r"./images/valid", train=False)
 
 esr_dataloader_train = DataLoader(
     esr_dataset_train,

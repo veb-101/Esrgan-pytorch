@@ -6,25 +6,83 @@ import cv2
 import torch
 
 
+def denormalize(tensors):
+    """Normalization parameters for pre-trained PyTorch models
+     Denormalizes image tensors using mean and std """
+    mean = np.array([0.485, 0.456, 0.406])
+    std = np.array([0.229, 0.224, 0.225])
+
+    tensors = tensors.clone().detach()
+    # print(tensors[:, 0, :, :].size())
+    # print(tensors[:, 1, :, :].size())
+    # print(tensors[:, 2, :, :].size())
+
+    for c in range(3):
+        tensors[:, c, :, :].mul_(std[c]).add_(mean[c])
+        # print(tensors.min(), tensors.max())
+    # return torch.clamp(np.clip(tensors.numpy(), 0, 255))
+    return torch.from_numpy(np.clip(tensors.cpu().clone().detach().numpy(), 0, 255))
+
+
+def _psnr(ground, gen):
+    score = psnr(ground, gen, data_range=ground.max() - ground.min())
+    return round(score, 3)
+
+
+def _ssim(ground, gen):
+    score = ssim(gen, ground, data_range=ground.max() - ground.min(), multichannel=True)
+    return round(score, 3)
+
+
+def cal_img_metrics(generated, ground_truth):
+
+    generated = generated.clone().detach()
+    ground_truth = ground_truth.clone().detach()
+
+    scores_PSNR = []
+    scores_SSIM = []
+    generated = denormalize(generated).permute(0, 2, 3, 1).numpy()
+    ground_truth = denormalize(ground_truth).permute(0, 2, 3, 1).numpy()
+
+    # gen = gen.permute(0, 2, 3, 1).numpy() * 255.0
+    # ground = ground.permute(0, 2, 3, 1).numpy() * 255.0
+
+    for i in range(len(ground_truth)):
+        ground = ground_truth[i]
+        gen = generated[i]
+
+        # print(ground_truth.max() - ground_truth.min())
+        psnr_ = _psnr(ground, gen)
+        ssim_ = _ssim(ground, gen)
+
+        scores_PSNR.append(psnr_)
+        scores_SSIM.append(ssim_)
+
+    return (
+        round(sum(scores_PSNR) / len(scores_PSNR), 3),
+        round(sum(scores_SSIM) / len(scores_SSIM), 3),
+    )
+
+
 # def denormalize(tensors):
 #     """Normalization parameters for pre-trained PyTorch models
 #      Denormalizes image tensors using mean and std """
 #     mean = np.array([0.485, 0.456, 0.406])
 #     std = np.array([0.229, 0.224, 0.225])
 
-#     tensors = tensors.clone().detach()
-# tensors = tensors.permute(0, 2, 3, 1).numpy()
-# # row, height, width, channel
+#     tensors = tensors.clone().cpu().detach()
+#     tensors = tensors.permute(0, 2, 3, 1).numpy()
+#     # row, height, width, channel
 
-# with torch.no_grad():
-#     for image in tensors:
-#         for c in range(3):
-#             np.add(np.multiply(image[:, :, c], std[c]), mean[c])
+#     with torch.no_grad():
+#         for image in tensors:
+#             for c in range(3):
+#                 np.add(np.multiply(image[:, :, c], std[c]), mean[c])
 
 #     # row, channel, height, width
-# tensors = np.moveaxis(tensors, (0, 3, 1, 2), (0, 1, 2, 3))
-# # print(tensors.shape)
-# return torch.from_numpy(np.clip(tensors, 0, 255))
+#     tensors = np.moveaxis(tensors, (0, 3, 1, 2), (0, 1, 2, 3))
+#     # print(tensors.shape)
+#     return torch.from_numpy(np.clip(tensors, 0, 255))
 
 # def ssim(img1, img2):
 #     C1 = (0.01 * 255) ** 2
@@ -103,65 +161,6 @@ import torch
 #             round(sum(scores_PSNR) / len(scores_PSNR), 3),
 #             round(sum(scores_SSIM) / len(scores_SSIM), 3),
 #         )
-
-
-def denormalize(tensors):
-    """Normalization parameters for pre-trained PyTorch models
-     Denormalizes image tensors using mean and std """
-    mean = np.array([0.485, 0.456, 0.406])
-    std = np.array([0.229, 0.224, 0.225])
-
-    tensors = tensors.clone().detach()
-    # print(tensors[:, 0, :, :].size())
-    # print(tensors[:, 1, :, :].size())
-    # print(tensors[:, 2, :, :].size())
-
-    for c in range(3):
-        tensors[:, c, :, :].mul_(std[c]).add_(mean[c])
-        # print(tensors.min(), tensors.max())
-    return torch.clamp(tensors, 0, 255)
-
-
-def _psnr(ground, gen):
-    score = psnr(ground, gen)
-    return round(score, 3)
-
-
-def _ssim(ground, gen):
-    score = ssim(gen, ground,
-                 data_range=ground.max() - ground.min(),
-                 multichannel=True)
-    return round(score, 3)
-
-
-def cal_img_metrics(generated, ground_truth):
-
-    generated = generated.clone().detach()
-    ground_truth = ground_truth.clone().detach()
-
-    scores_PSNR = []
-    scores_SSIM = []
-    generated = denormalize(generated).permute(0, 2, 3, 1).numpy()
-    ground_truth = denormalize(ground_truth).permute(0, 2, 3, 1).numpy()
-
-    # gen = gen.permute(0, 2, 3, 1).numpy() * 255.0
-    # ground = ground.permute(0, 2, 3, 1).numpy() * 255.0
-
-    for i in range(len(ground_truth)):
-        ground = ground_truth[i]
-        gen = generated[i]
-
-        # print(ground_truth.max() - ground_truth.min())
-        psnr_ = _psnr(ground, gen)
-        ssim_ = _ssim(ground, gen)
-
-        scores_PSNR.append(psnr_)
-        scores_SSIM.append(ssim_)
-
-    return (
-        round(sum(scores_PSNR) / len(scores_PSNR), 3),
-        round(sum(scores_SSIM) / len(scores_SSIM), 3),
-    )
 
 
 # if __name__ == '__main__':

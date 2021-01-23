@@ -22,7 +22,6 @@ class Trainer:
         self.num_epoch = config["num_epoch"]
         self.start_epoch = config["start_epoch"]
         self.image_size = config["image_size"]
-        self.checkpoint_dir = config["checkpoint_dir"]
         self.sample_dir = config["sample_dir"]
 
         self.batch_size = config["batch_size"]
@@ -79,6 +78,12 @@ class Trainer:
         for epoch in range(self.start_epoch, self.start_epoch + self.num_epoch):
             self.generator.train()
             self.discriminator.train()
+
+            epoch_gen_loss = []
+            epoch_dis_loss = []
+            epoch_per_loss = []
+            epoch_adv_loss = []
+            epoch_con_loss = []
 
             steps_completed = (self.start_epoch + 1) * total_step
 
@@ -138,7 +143,9 @@ class Trainer:
                         adversarial_loss_fr = adversarial_criterion(
                             discriminator_fr, real_labels
                         )
-                        adversarial_loss = (adversarial_loss_fr + adversarial_loss_rf) / 2
+                        adversarial_loss = (
+                            adversarial_loss_fr + adversarial_loss_rf
+                        ) / 2
                         # ----------------------
 
                         # Perceptual loss - VGG loss before activations
@@ -164,10 +171,12 @@ class Trainer:
                     np.round(generator_loss.detach().item(), 5)
                 )
                 self.metrics["con_loss"].append(
-                    np.round(
-                        content_loss.detach().item() * self.content_loss_factor, 4
-                    )
+                    np.round(content_loss.detach().item() * self.content_loss_factor, 4)
                 )
+
+                epoch_gen_loss.append(self.metrics["gen_loss"][-1])
+                epoch_con_loss.append(self.metrics["con_loss"][-1])
+
                 torch.cuda.empty_cache()
                 gc.collect()
 
@@ -197,7 +206,9 @@ class Trainer:
                         adversarial_loss_fr = adversarial_criterion(
                             discriminator_fr, fake_labels
                         )
-                        discriminator_loss = (adversarial_loss_fr + adversarial_loss_rf) / 2
+                        discriminator_loss = (
+                            adversarial_loss_fr + adversarial_loss_rf
+                        ) / 2
 
                     self.scaler_dis.scale(discriminator_loss).backward()
                     self.scaler_dis.step(self.optimizer_discriminator)
@@ -225,20 +236,24 @@ class Trainer:
                         )
                     )
 
+                    epoch_dis_loss.append(self.metrics["dis_loss"][-1])
+                    epoch_adv_loss.append(self.metrics["adv_loss"][-1])
+                    epoch_per_loss.append(self.metrics["per_loss"][-1])
+
                 if step == int(total_step / 2) or step == 0 or step == (total_step - 1):
                     if not self.is_psnr_oriented:
                         print(
                             f"[Epoch {epoch}/{self.start_epoch+self.num_epoch-1}] [Batch {step+1}/{total_step}]"
-                            f"[D loss {np.round(np.array(self.metrics['dis_loss']).mean(), 4)}] [G loss {np.round(np.array(self.metrics['gen_loss']).mean(), 4)}]"
-                            f"[adversarial loss {np.round(np.array(self.metrics['adv_loss']).mean(), 4)}]"
-                            f"[perceptual loss {np.round(np.array(self.metrics['per_loss']).mean(), 4)}]"
-                            f"[content loss {np.round(np.array(self.metrics['con_loss']).mean(), 4)}]"
+                            f"[D loss {round(self.metrics['dis_loss'][-1], 4)}] [G loss {round(self.metrics['gen_loss'][-1], 4)}]"
+                            f"[perceptual loss {round(self.metrics['per_loss'][-1], 4)}]"
+                            f"[adversarial loss {round(self.metrics['adv_loss'][-1], 4)}]"
+                            f"[content loss {round(self.metrics['con_loss'][-1], 4)}]"
                             f""
                         )
                     else:
                         print(
                             f"[Epoch {epoch}/{self.start_epoch+self.num_epoch-1}] [Batch {step+1}/{total_step}] "
-                            f"[content loss {np.round(np.array(self.metrics['con_loss']).mean(), 4)}]"
+                            f"[content loss {round(self.metrics['con_loss'][-1], 4)}]"
                         )
 
                     result = torch.cat(
@@ -253,13 +268,26 @@ class Trainer:
                     save_image(
                         result,
                         os.path.join(self.sample_dir, str(epoch), f"ESR_{step+1}.png"),
-                        nrow=4,
+                        nrow=8,
                         normalize=False,
                     )
                 torch.cuda.empty_cache()
                 gc.collect()
 
+            # epoch metrics
+            print(
+                f"Epoch: {epoch} -> Dis loss: {np.round(np.array(epoch_dis_loss).mean(), 4)}
+                Gen loss: {np.round(np.array(epoch_gen_loss).mean(), 4)}"
+                f"Per loss:: {np.round(np.array(epoch_per_loss).mean(), 4)}"
+                f"Adv loss:: {np.round(np.array(epoch_adv_loss).mean(), 4)}"
+                f"Con loss:: {np.round(np.array(epoch_con_loss).mean(), 4)}"
+                f""
+            )
+
             # validation set SSIM and PSNR
+            val_batch_psnr = []
+            val_batch_ssim = []
+
             for image_val in self.data_loader_val:
                 val_low_resolution = image_val["lr"].to(self.device)
                 val_high_resolution = image_val["hr"].to(self.device)
@@ -274,24 +302,31 @@ class Trainer:
                         val_fake_high_res.detach().cpu(),
                         val_high_resolution.detach().cpu(),
                     )
-                    self.metrics["PSNR"].append(val_psnr)
-                    self.metrics["SSIM"].append(val_ssim)
-                    print(f"Validation Set: PSNR: {val_psnr}, SSIM:{val_ssim}")
+                    val_batch_psnr.append(val_psnr)
+                    val_batch_ssim.append(val_ssim)
 
-                    result_val = torch.cat(
-                        (
-                            denormalize(val_high_resolution).detach().cpu(),
-                            denormalize(val_fake_high_res).detach().cpu(),
-                        ),
-                        2,
-                    )
-                    save_image(
-                        result_val,
-                        os.path.join(self.sample_dir, f"Validation_{epoch}.png"),
-                        nrow=4,
-                        normalize=False,
-                    )
-                    # print(result[0][:, 512:, :].min(), result[0][:, 512:, :].max())
+            val_epoch_psnr = len(val_batch_psnr)/sum(val_batch_psnr)
+            val_epoch_ssim = len(val_batch_ssim)/sum(val_batch_ssim)
+
+            self.metrics["PSNR"].append(val_epoch_psnr)
+            self.metrics["SSIM"].append(val_epoch_ssim)
+
+            print(f"Validation Set: PSNR: {val_epoch_psnr}, SSIM:{val_epoch_ssim}")
+            # visualization
+            result_val = torch.cat(
+                (
+                    denormalize(val_high_resolution).detach().cpu(),
+                    denormalize(val_fake_high_res).detach().cpu(),
+                ),
+                2,
+            )
+            save_image(
+                result_val,
+                os.path.join(self.sample_dir, f"Validation_{epoch}.png"),
+                nrow=8,
+                normalize=False,
+            )
+            # print(result[0][:, 512:, :].min(), result[0][:, 512:, :].max())
 
             self.lr_scheduler_generator.step()
             if not self.is_psnr_oriented:
@@ -410,6 +445,16 @@ class Trainer:
         self.metrics["PSNR"] = checkpoint[f"metrics_till_{self.start_epoch-1}"]["PSNR"]
         self.metrics["SSIM"] = checkpoint[f"metrics_till_{self.start_epoch-1}"]["SSIM"]
         self.start_epoch = checkpoint["next_epoch"]
+
+        self.decay_iter = np.array(self.decay_iter) - self.start_epoch
+
+        temp = []
+        for i in self.decay_iter:
+            if i > 0:
+                temp.append(i)
+
+        self.decay_iter = temp
+        print(self.decay_iter)
 
         print(f'Mini_batch completed: {checkpoint["steps_completed"]}')
         print(f"Checkpoint: {self.start_epoch-1} loaded")
