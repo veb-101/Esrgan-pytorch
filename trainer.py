@@ -276,8 +276,8 @@ class Trainer:
 
             # epoch metrics
             print(
-                f"Epoch: {epoch} -> Dis loss: {np.round(np.array(epoch_dis_loss).mean(), 4)}
-                Gen loss: {np.round(np.array(epoch_gen_loss).mean(), 4)}"
+                f"Epoch: {epoch} -> Dis loss: {np.round(np.array(epoch_dis_loss).mean(), 4)}"
+                f"Gen loss: {np.round(np.array(epoch_gen_loss).mean(), 4)}"
                 f"Per loss:: {np.round(np.array(epoch_per_loss).mean(), 4)}"
                 f"Adv loss:: {np.round(np.array(epoch_adv_loss).mean(), 4)}"
                 f"Con loss:: {np.round(np.array(epoch_con_loss).mean(), 4)}"
