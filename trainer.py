@@ -164,7 +164,10 @@ class Trainer:
 
                 self.scaler_gen.scale(generator_loss).backward()
                 self.scaler_gen.step(self.optimizer_generator)
+
+                scale_gen = self.scaler_gen.get_scale()
                 self.scaler_gen.update()
+                skip_gen_lr_sched = (scale_gen != self.scaler_gen.get_scale())
                 # self.optimizer_generator.step()
 
                 self.metrics["gen_loss"].append(
@@ -212,7 +215,9 @@ class Trainer:
 
                     self.scaler_dis.scale(discriminator_loss).backward()
                     self.scaler_dis.step(self.optimizer_discriminator)
+                    dis_scale_val = self.scaler_gen.get_scale()
                     self.scaler_dis.update()
+                    skip_dis_lr_sched = (dis_scale_val != self.scaler_dis.get_scale())
                     # discriminator_loss.backward()
                     # self.optimizer_discriminator.step()
 
@@ -275,14 +280,29 @@ class Trainer:
                 gc.collect()
 
             # epoch metrics
-            print(
-                f"Epoch: {epoch} -> Dis loss: {np.round(np.array(epoch_dis_loss).mean(), 4)}"
-                f"Gen loss: {np.round(np.array(epoch_gen_loss).mean(), 4)}"
-                f"Per loss:: {np.round(np.array(epoch_per_loss).mean(), 4)}"
-                f"Adv loss:: {np.round(np.array(epoch_adv_loss).mean(), 4)}"
-                f"Con loss:: {np.round(np.array(epoch_con_loss).mean(), 4)}"
-                f""
-            )
+            if not self.is_psnr_oriented:
+                print(
+                    f"Epoch: {epoch} -> Dis loss: {np.round(np.array(epoch_dis_loss).mean(), 4)}"
+                    f"Gen loss: {np.round(np.array(epoch_gen_loss).mean(), 4)}"
+                    f"Per loss:: {np.round(np.array(epoch_per_loss).mean(), 4)}"
+                    f"Adv loss:: {np.round(np.array(epoch_adv_loss).mean(), 4)}"
+                    f"Con loss:: {np.round(np.array(epoch_con_loss).mean(), 4)}"
+                    f""
+                )
+            else:
+                print(
+                    f"Epoch: {epoch} -> "
+                    f"Gen loss: {np.round(np.array(epoch_gen_loss).mean(), 4)}"
+                    f"Con loss:: {np.round(np.array(epoch_con_loss).mean(), 4)}"
+                    f""
+                )
+
+            if not skip_gen_lr_sched:
+                self.lr_scheduler_generator.step()
+
+            if not self.is_psnr_oriented:
+                if not skip_dis_lr_sched:
+                    self.lr_scheduler_discriminator.step()
 
             # validation set SSIM and PSNR
             val_batch_psnr = []
@@ -327,10 +347,6 @@ class Trainer:
                 normalize=False,
             )
             # print(result[0][:, 512:, :].min(), result[0][:, 512:, :].max())
-
-            self.lr_scheduler_generator.step()
-            if not self.is_psnr_oriented:
-                self.lr_scheduler_discriminator.step()
 
             torch.save(
                 {
