@@ -186,7 +186,7 @@ class Discriminator(nn.Module):
 
         layers = []
         in_filters = in_channels
-        for i, out_filters in enumerate([32, 64, 128, 256]):
+        for i, out_filters in enumerate([64, 128, 256, 512]):
             layers.extend(
                 discriminator_block(in_filters, out_filters, first_block=(i == 0))
             )

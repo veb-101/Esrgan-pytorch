@@ -167,7 +167,7 @@ class Trainer:
 
                 scale_gen = self.scaler_gen.get_scale()
                 self.scaler_gen.update()
-                skip_gen_lr_sched = (scale_gen != self.scaler_gen.get_scale())
+                skip_gen_lr_sched = scale_gen != self.scaler_gen.get_scale()
                 # self.optimizer_generator.step()
 
                 self.metrics["gen_loss"].append(
@@ -217,7 +217,7 @@ class Trainer:
                     self.scaler_dis.step(self.optimizer_discriminator)
                     dis_scale_val = self.scaler_gen.get_scale()
                     self.scaler_dis.update()
-                    skip_dis_lr_sched = (dis_scale_val != self.scaler_dis.get_scale())
+                    skip_dis_lr_sched = dis_scale_val != self.scaler_dis.get_scale()
                     # discriminator_loss.backward()
                     # self.optimizer_discriminator.step()
 
@@ -325,13 +325,16 @@ class Trainer:
                     val_batch_psnr.append(val_psnr)
                     val_batch_ssim.append(val_ssim)
 
-            val_epoch_psnr = sum(val_batch_psnr)/len(val_batch_psnr)
-            val_epoch_ssim = sum(val_batch_ssim)/len(val_batch_ssim)
+            val_epoch_psnr = sum(val_batch_psnr) / len(val_batch_psnr)
+            val_epoch_ssim = sum(val_batch_ssim) / len(val_batch_ssim)
 
             self.metrics["PSNR"].append(val_epoch_psnr)
             self.metrics["SSIM"].append(val_epoch_ssim)
+            torch.cuda.empty_cache()
+            gc.collect()
 
             print(f"Validation Set: PSNR: {val_epoch_psnr}, SSIM:{val_epoch_ssim}")
+
             # visualization
             result_val = torch.cat(
                 (
@@ -347,9 +350,18 @@ class Trainer:
                 normalize=False,
             )
             # print(result[0][:, 512:, :].min(), result[0][:, 512:, :].max())
-
-            torch.save(
-                {
+            if self.is_psnr_oriented:
+                models_dict = {
+                    "next_epoch": epoch + 1,
+                    f"generator_dict_{epoch}": self.generator.state_dict(),
+                    f"optim_gen_{epoch}": self.optimizer_generator.state_dict(),
+                    f"steps_completed": steps_completed,
+                    f"metrics_till_{epoch}": self.metrics,
+                    f"grad_scaler_gen_{epoch}": self.scaler_gen,
+                    f"grad_scaler_dis_{epoch}": self.scaler_dis,
+                }
+            else:
+                models_dict = {
                     "next_epoch": epoch + 1,
                     f"generator_dict_{epoch}": self.generator.state_dict(),
                     f"discriminator_dict_{epoch}": self.discriminator.state_dict(),
@@ -359,8 +371,10 @@ class Trainer:
                     f"metrics_till_{epoch}": self.metrics,
                     f"grad_scaler_gen_{epoch}": self.scaler_gen,
                     f"grad_scaler_dis_{epoch}": self.scaler_dis,
-                },
-                f"checkpoint_{epoch}.tar",
+                }
+
+            torch.save(
+                models_dict, f"checkpoint_{epoch}.tar",
             )
             shutil.copyfile(
                 f"checkpoint_{epoch}.tar",
@@ -423,10 +437,13 @@ class Trainer:
         print("Generator weights loaded.")
 
         if self.load_previous_opt:
-            self.discriminator.load_state_dict(
-                checkpoint[f"discriminator_dict_{self.start_epoch-1}"]
-            )
-            print("Discriminator weights loaded.")
+            try:  # changed discriminator architecture
+                self.discriminator.load_state_dict(
+                    checkpoint[f"discriminator_dict_{self.start_epoch-1}"]
+                )
+                print("Discriminator weights loaded.")
+            except:
+                pass
 
             self.optimizer_generator.load_state_dict(
                 checkpoint[f"optim_gen_{self.start_epoch-1}"]
