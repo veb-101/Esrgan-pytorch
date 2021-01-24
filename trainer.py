@@ -350,32 +350,29 @@ class Trainer:
                 normalize=False,
             )
             # print(result[0][:, 512:, :].min(), result[0][:, 512:, :].max())
-            if self.is_psnr_oriented:
-                models_dict = {
-                    "next_epoch": epoch + 1,
-                    f"generator_dict_{epoch}": self.generator.state_dict(),
-                    f"optim_gen_{epoch}": self.optimizer_generator.state_dict(),
-                    f"steps_completed": steps_completed,
-                    f"metrics_till_{epoch}": self.metrics,
-                    f"grad_scaler_gen_{epoch}": self.scaler_gen,
-                    f"grad_scaler_dis_{epoch}": self.scaler_dis,
-                }
-            else:
-                models_dict = {
-                    "next_epoch": epoch + 1,
-                    f"generator_dict_{epoch}": self.generator.state_dict(),
-                    f"discriminator_dict_{epoch}": self.discriminator.state_dict(),
-                    f"optim_gen_{epoch}": self.optimizer_generator.state_dict(),
-                    f"optim_dis_{epoch}": self.optimizer_discriminator.state_dict(),
-                    f"steps_completed": steps_completed,
-                    f"metrics_till_{epoch}": self.metrics,
-                    f"grad_scaler_gen_{epoch}": self.scaler_gen,
-                    f"grad_scaler_dis_{epoch}": self.scaler_dis,
-                }
+
+            models_dict = {
+                "next_epoch": epoch + 1,
+                f"generator_dict_{epoch}": self.generator.state_dict(),
+                f"optim_gen_{epoch}": self.optimizer_generator.state_dict(),
+                f"steps_completed": steps_completed,
+                f"metrics_till_{epoch}": self.metrics,
+                f"grad_scaler_gen_{epoch}": self.scaler_gen,
+                f"grad_scaler_dis_{epoch}": self.scaler_dis,
+            }
+
+            if not self.is_psnr_oriented:
+                models_dict[
+                    f"discriminator_dict_{epoch}"
+                ] = self.discriminator.state_dict()
+                models_dict[
+                    f"optim_dis_{epoch}"
+                ] = self.optimizer_discriminator.state_dict()
 
             torch.save(
                 models_dict, f"checkpoint_{epoch}.tar",
             )
+
             shutil.copyfile(
                 f"checkpoint_{epoch}.tar",
                 os.path.join(
