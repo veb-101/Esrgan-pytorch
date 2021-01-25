@@ -379,6 +379,8 @@ class Trainer:
                     r"/content/drive/MyDrive/Project-ESRGAN", rf"checkpoint_{epoch}.tar"
                 ),
             )
+            if os.path.exists(f"checkpoint_{epoch-1}.tar"):
+                os.remove(f"checkpoint_{epoch-1}.tar")
             torch.cuda.empty_cache()
             gc.collect()
         return self.metrics
