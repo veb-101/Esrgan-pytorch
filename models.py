@@ -215,10 +215,9 @@ class Discriminator(nn.Module):
 if __name__ == "__main__":
     from torchsummary import summary
 
-    model = Generator(num_res_blocks=18, nf=64, gc=32)
-    model._mrsa_init(model.layers_)
-    summary(model, (3, 64, 64))
+    # model = Generator(num_res_blocks=23, nf=64, gc=32)
+    # model._mrsa_init(model.layers_)
+    # summary(model, (3, 64, 64))
 
     model = Discriminator()
-    # print(model.output_shape)
     summary(model, (3, 256, 256))

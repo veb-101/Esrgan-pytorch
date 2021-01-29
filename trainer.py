@@ -189,9 +189,9 @@ class Trainer:
                 if not self.is_psnr_oriented:
                     self.optimizer_discriminator.zero_grad()
 
-                    # with torch.no_grad():
-                    #     with amp.autocast():
-                    #         fake_high_resolution = self.generator(low_resolution)
+                    with torch.no_grad():
+                        with amp.autocast():
+                            fake_high_resolution = self.generator(low_resolution)
 
                     with amp.autocast():
                         score_real = self.discriminator(high_resolution)
@@ -357,8 +357,8 @@ class Trainer:
                 f"optim_gen_{epoch}": self.optimizer_generator.state_dict(),
                 f"steps_completed": steps_completed,
                 f"metrics_till_{epoch}": self.metrics,
-                f"grad_scaler_gen_{epoch}": self.scaler_gen,
-                f"grad_scaler_dis_{epoch}": self.scaler_dis,
+                f"grad_scaler_gen_{epoch}": self.scaler_gen.state_dict(),
+                f"grad_scaler_dis_{epoch}": self.scaler_dis.state_dict(),
             }
 
             if not self.is_psnr_oriented:
@@ -381,6 +381,12 @@ class Trainer:
             )
             if os.path.exists(f"checkpoint_{epoch-1}.tar"):
                 os.remove(f"checkpoint_{epoch-1}.tar")
+                os.remove(
+                    os.path.join(
+                        r"/content/drive/MyDrive/Project-ESRGAN",
+                        rf"checkpoint_{epoch-1}.tar",
+                    )
+                )
             torch.cuda.empty_cache()
             gc.collect()
         return self.metrics
@@ -436,28 +442,32 @@ class Trainer:
         print("Generator weights loaded.")
 
         if self.load_previous_opt:
-            try:  # changed discriminator architecture
+            self.optimizer_generator.load_state_dict(
+                checkpoint[f"optim_gen_{self.start_epoch-1}"]
+            )
+            print("Generator Optimizer state loaded")
+
+            self.scaler_gen.load_state_dict(
+                checkpoint[f"grad_scaler_gen_{self.start_epoch-1}"]
+            )
+            print("Grad Scaler - Generator loaded")
+
+            try:
                 self.discriminator.load_state_dict(
                     checkpoint[f"discriminator_dict_{self.start_epoch-1}"]
                 )
                 print("Discriminator weights loaded.")
+                self.optimizer_discriminator.load_state_dict(
+                    checkpoint[f"optim_dis_{self.start_epoch-1}"]
+                )
+                print("Discriminator optimizer loaded.")
+
+                self.scaler_dis.load_state_dict(
+                    checkpoint[f"grad_scaler_dis_{self.start_epoch-1}"]
+                )
+                print("Grad Scaler - Discriminator loaded")
             except:
                 pass
-
-            self.optimizer_generator.load_state_dict(
-                checkpoint[f"optim_gen_{self.start_epoch-1}"]
-            )
-            self.optimizer_discriminator.load_state_dict(
-                checkpoint[f"optim_dis_{self.start_epoch-1}"]
-            )
-            print("Optimizer's state loaded")
-            try:
-                self.scaler_gen = checkpoint[f"grad_scaler_gen_{self.start_epoch-1}"]
-                print("Grad Scaler - Generator loaded")
-                self.scaler_dis = checkpoint[f"grad_scaler_dis_{self.start_epoch-1}"]
-                print("Grad Scaler - Discriminator loaded")
-            except Exception as e:
-                print(e)
 
         self.metrics["dis_loss"] = checkpoint[f"metrics_till_{self.start_epoch-1}"][
             "dis_loss"
