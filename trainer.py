@@ -93,8 +93,8 @@ class Trainer:
             if not os.path.exists(os.path.join(self.sample_dir, str(epoch))):
                 os.makedirs(os.path.join(self.sample_dir, str(epoch)))
 
-            for step, image in tqdm(
-                enumerate(range(length_train)),
+            for step in tqdm(
+                range(length_train),
                 desc=f"Epoch: {epoch}/{self.start_epoch + self.num_epoch-1}",
             ):
                 image = next(training_loader_iter)
