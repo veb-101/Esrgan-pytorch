@@ -277,6 +277,8 @@ class Trainer:
                         ),
                         2,
                     )
+                    torch.cuda.empty_cache()
+                    gc.collect()
                     # print(result[0][:, 512:, :].min(), result[0][:, 512:, :].max())
 
                     save_image(
@@ -285,8 +287,6 @@ class Trainer:
                         nrow=8,
                         normalize=False,
                     )
-                torch.cuda.empty_cache()
-                gc.collect()
 
             # epoch metrics
             if not self.is_psnr_oriented:
