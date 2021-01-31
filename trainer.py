@@ -521,6 +521,9 @@ class Trainer:
         for i in self.decay_iter:
             if i > 0:
                 temp.append(i)
+        
+        if not temp:
+            temp.append(100)
 
         self.decay_iter = temp
         print(self.decay_iter)
