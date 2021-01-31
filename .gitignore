@@ -10,3 +10,4 @@ checkpoints/*
 *.tar
 train (1).py
 .ipynb_*
+test.py
