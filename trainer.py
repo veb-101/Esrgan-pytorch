@@ -321,6 +321,9 @@ class Trainer:
             # validation set SSIM and PSNR
             val_batch_psnr = []
             val_batch_ssim = []
+            
+            ups_batch_psnr = []
+            ups_batch_ssim = []
 
             for image_val in self.data_loader_val:
                 val_low_resolution = image_val["lr"].to(self.device)
@@ -336,16 +339,30 @@ class Trainer:
                         val_fake_high_res.detach().cpu(),
                         val_high_resolution.detach().cpu(),
                     )
+                    
                     val_batch_psnr.append(val_psnr)
                     val_batch_ssim.append(val_ssim)
+                    
+                    # image metrics PSNR and SSIM
+                    ups_psnr, ups_ssim = cal_img_metrics(
+                        upsampler(val_low_resolution.detach().cpu()),
+                        val_high_resolution.detach().cpu(),
+                    )
+                    
+                    ups_batch_psnr.append(ups_psnr)
+                    ups_batch_ssim.append(ups_ssim)
 
-            val_epoch_psnr = sum(val_batch_psnr) / len(val_batch_psnr)
-            val_epoch_ssim = sum(val_batch_ssim) / len(val_batch_ssim)
+            val_epoch_psnr = round(sum(val_batch_psnr) / len(val_batch_psnr), 4)
+            val_epoch_ssim = round(sum(val_batch_ssim) / len(val_batch_ssim), 4)
+
+            ups_epoch_psnr = round(sum(ups_batch_psnr) / len(ups_batch_psnr), 4)
+            ups_epoch_ssim = round(sum(ups_batch_ssim) / len(ups_batch_ssim), 4)
 
             self.metrics["PSNR"].append(val_epoch_psnr)
             self.metrics["SSIM"].append(val_epoch_ssim)
 
             print(f"Validation Set: PSNR: {val_epoch_psnr}, SSIM:{val_epoch_ssim}")
+            print(f"Bicubic Ups: PSNR: {ups_epoch_psnr}, SSIM:{ups_epoch_ssim}")
 
             # visualization
             result_val = torch.cat(
