@@ -25,7 +25,7 @@ import torch
 
 
 def denormalize(tensors):
-    tensors = tensors.clone().detach().cpu().numpy()
+    tensors = tensors.numpy()
     return torch.from_numpy(np.clip(tensors, 0.0, 1.0))
 
 

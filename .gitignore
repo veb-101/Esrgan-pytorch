@@ -11,3 +11,5 @@ checkpoints/*
 train (1).py
 .ipynb_*
 test.py
+*.pth
+.gitignore

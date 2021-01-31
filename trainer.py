@@ -252,6 +252,9 @@ class Trainer:
                     epoch_dis_loss.append(self.metrics["dis_loss"][-1])
                     epoch_adv_loss.append(self.metrics["adv_loss"][-1])
                     epoch_per_loss.append(self.metrics["per_loss"][-1])
+                
+                torch.cuda.empty_cache()
+                gc.collect()
 
                 if step == int(total_step / 2) or step == 0 or step == (total_step - 1):
                     if not self.is_psnr_oriented:
@@ -271,14 +274,13 @@ class Trainer:
 
                     result = torch.cat(
                         (
-                            denormalize(high_resolution).detach().cpu(),
-                            denormalize(upsampler(low_resolution)).detach().cpu(),
-                            denormalize(fake_high_resolution).detach().cpu(),
+                            denormalize(high_resolution.detach().cpu()),
+                            denormalize(upsampler(low_resolution).detach().cpu()),
+                            denormalize(fake_high_resolution.detach().cpu()),
                         ),
                         2,
-                    )
-                    torch.cuda.empty_cache()
-                    gc.collect()
+                    )   
+                
                     # print(result[0][:, 512:, :].min(), result[0][:, 512:, :].max())
 
                     save_image(
@@ -287,6 +289,9 @@ class Trainer:
                         nrow=8,
                         normalize=False,
                     )
+                
+                torch.cuda.empty_cache()
+                gc.collect()
 
             # epoch metrics
             if not self.is_psnr_oriented:
@@ -339,17 +344,15 @@ class Trainer:
 
             self.metrics["PSNR"].append(val_epoch_psnr)
             self.metrics["SSIM"].append(val_epoch_ssim)
-            torch.cuda.empty_cache()
-            gc.collect()
 
             print(f"Validation Set: PSNR: {val_epoch_psnr}, SSIM:{val_epoch_ssim}")
 
             # visualization
             result_val = torch.cat(
                 (
-                    denormalize(val_high_resolution).detach().cpu(),
-                    denormalize(upsampler(val_low_resolution)).detach().cpu(),
-                    denormalize(val_fake_high_res).detach().cpu(),
+                    denormalize(val_high_resolution.detach().cpu()),
+                    denormalize(upsampler(val_low_resolution).detach().cpu()),
+                    denormalize(val_fake_high_res.detach().cpu()),
                 ),
                 2,
             )
@@ -360,6 +363,8 @@ class Trainer:
                 normalize=False,
             )
             # print(result[0][:, 512:, :].min(), result[0][:, 512:, :].max())
+            torch.cuda.empty_cache()
+            gc.collect()
 
             models_dict = {
                 "next_epoch": epoch + 1,
@@ -368,7 +373,7 @@ class Trainer:
                 f"steps_completed": steps_completed,
                 f"metrics_till_{epoch}": self.metrics,
                 f"grad_scaler_gen_{epoch}": self.scaler_gen.state_dict(),
-                f"grad_scaler_dis_{epoch}": self.scaler_dis.state_dict(),
+                
             }
 
             if not self.is_psnr_oriented:
@@ -378,6 +383,9 @@ class Trainer:
                 models_dict[
                     f"optim_dis_{epoch}"
                 ] = self.optimizer_discriminator.state_dict()
+                models_dict[
+                    f"grad_scaler_dis_{epoch}"
+                ] = self.scaler_dis.state_dict()
 
             torch.save(
                 models_dict, f"checkpoint_{epoch}.tar",

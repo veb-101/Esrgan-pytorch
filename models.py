@@ -316,12 +316,11 @@ class Discriminator(nn.Module):
 if __name__ == "__main__":
     from torchsummary import summary
 
-    # model = Generator(num_res_blocks=23, nf=64, gc=32)
-    # model.load_state_dict(torch.load("RRDB_PSNR_x4.pth"), strict=False)
-    # model._mrsa_init(model.layers_)
-    # torch.save(model.state_dict(), "Gen_PSNR.pth")
+    model = Generator(num_res_blocks=23, nf=64, gc=32)
+    model.load_state_dict(torch.load("Gen_GAN.pth"), strict=True)
+    model._mrsa_init(model.layers_)
 
-    # summary(model, (3, 64, 64))
+    summary(model, (3, 64, 64))
 
     # model = Discriminator()
     # summary(model, (3, 256, 256))
