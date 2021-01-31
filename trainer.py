@@ -75,6 +75,8 @@ class Trainer:
         steps_completed = 0
         Tensor = torch.cuda.FloatTensor if torch.cuda.is_available() else torch.Tensor
 
+        upsampler = torch.nn.Upsample(scale_factor=4, mode="bicubic")
+
         for epoch in range(self.start_epoch, self.start_epoch + self.num_epoch):
             self.generator.train()
             self.discriminator.train()
@@ -270,6 +272,7 @@ class Trainer:
                     result = torch.cat(
                         (
                             denormalize(high_resolution.detach().cpu()),
+                            denormalize(upsampler(low_resolution)).detach().cpu(),
                             denormalize(fake_high_resolution.detach().cpu()),
                         ),
                         2,
@@ -345,6 +348,7 @@ class Trainer:
             result_val = torch.cat(
                 (
                     denormalize(val_high_resolution).detach().cpu(),
+                    denormalize(upsampler(val_low_resolution)).detach().cpu(),
                     denormalize(val_fake_high_res).detach().cpu(),
                 ),
                 2,
@@ -406,7 +410,12 @@ class Trainer:
             scale=self.scale_factor,
         ).to(self.device)
 
-        self.generator._mrsa_init(self.generator.layers_)
+        if self.is_psnr_oriented:
+            self.generator.load_state_dict(torch.load("Gen_PSNR.pth"))
+        else:
+            self.generator.load_state_dict(torch.load("Gen_GAN.pth"))
+
+        # self.generator._mrsa_init(self.generator.layers_)
 
         self.discriminator = Discriminator(
             input_shape=(3, self.image_size, self.image_size)

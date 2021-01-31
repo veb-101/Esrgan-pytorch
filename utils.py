@@ -21,7 +21,7 @@ def denormalize(tensors):
         tensors[:, c, :, :].mul_(std[c]).add_(mean[c])
         # print(tensors.min(), tensors.max())
     # return torch.clamp(np.clip(tensors.numpy(), 0, 255))
-    return torch.from_numpy(np.clip(tensors.cpu().clone().detach().numpy(), 0, 255))
+    return torch.from_numpy(np.clip(tensors.cpu().detach().numpy(), 0, 255))
 
 
 def _psnr(ground, gen):
