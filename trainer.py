@@ -271,9 +271,9 @@ class Trainer:
 
                     result = torch.cat(
                         (
-                            denormalize(high_resolution.detach().cpu()),
+                            denormalize(high_resolution).detach().cpu(),
                             denormalize(upsampler(low_resolution)).detach().cpu(),
-                            denormalize(fake_high_resolution.detach().cpu()),
+                            denormalize(fake_high_resolution).detach().cpu(),
                         ),
                         2,
                     )
