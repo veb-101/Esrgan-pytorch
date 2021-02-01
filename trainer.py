@@ -252,7 +252,7 @@ class Trainer:
                     epoch_dis_loss.append(self.metrics["dis_loss"][-1])
                     epoch_adv_loss.append(self.metrics["adv_loss"][-1])
                     epoch_per_loss.append(self.metrics["per_loss"][-1])
-                
+
                 torch.cuda.empty_cache()
                 gc.collect()
 
@@ -279,8 +279,8 @@ class Trainer:
                             denormalize(fake_high_resolution.detach().cpu()),
                         ),
                         2,
-                    )   
-                
+                    )
+
                     # print(result[0][:, 512:, :].min(), result[0][:, 512:, :].max())
 
                     save_image(
@@ -289,7 +289,7 @@ class Trainer:
                         nrow=8,
                         normalize=False,
                     )
-                
+
                 torch.cuda.empty_cache()
                 gc.collect()
 
@@ -321,7 +321,7 @@ class Trainer:
             # validation set SSIM and PSNR
             val_batch_psnr = []
             val_batch_ssim = []
-            
+
             ups_batch_psnr = []
             ups_batch_ssim = []
 
@@ -339,16 +339,16 @@ class Trainer:
                         val_fake_high_res.detach().cpu(),
                         val_high_resolution.detach().cpu(),
                     )
-                    
+
                     val_batch_psnr.append(val_psnr)
                     val_batch_ssim.append(val_ssim)
-                    
+
                     # image metrics PSNR and SSIM
                     ups_psnr, ups_ssim = cal_img_metrics(
                         upsampler(val_low_resolution.detach().cpu()),
                         val_high_resolution.detach().cpu(),
                     )
-                    
+
                     ups_batch_psnr.append(ups_psnr)
                     ups_batch_ssim.append(ups_ssim)
 
@@ -390,7 +390,6 @@ class Trainer:
                 f"steps_completed": steps_completed,
                 f"metrics_till_{epoch}": self.metrics,
                 f"grad_scaler_gen_{epoch}": self.scaler_gen.state_dict(),
-                
             }
 
             if not self.is_psnr_oriented:
@@ -400,9 +399,7 @@ class Trainer:
                 models_dict[
                     f"optim_dis_{epoch}"
                 ] = self.optimizer_discriminator.state_dict()
-                models_dict[
-                    f"grad_scaler_dis_{epoch}"
-                ] = self.scaler_dis.state_dict()
+                models_dict[f"grad_scaler_dis_{epoch}"] = self.scaler_dis.state_dict()
 
             torch.save(
                 models_dict, f"checkpoint_{epoch}.tar",
@@ -538,7 +535,7 @@ class Trainer:
         for i in self.decay_iter:
             if i > 0:
                 temp.append(i)
-        
+
         if not temp:
             temp.append(100)
 

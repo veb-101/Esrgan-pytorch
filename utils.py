@@ -6,27 +6,27 @@ import cv2
 import torch
 
 
-# def denormalize(tensors):
-#     """Normalization parameters for pre-trained PyTorch models
-#      Denormalizes image tensors using mean and std """
-#     mean = np.array([0.485, 0.456, 0.406])
-#     std = np.array([0.229, 0.224, 0.225])
-
-#     tensors = tensors.clone().detach()
-#     # print(tensors[:, 0, :, :].size())
-#     # print(tensors[:, 1, :, :].size())
-#     # print(tensors[:, 2, :, :].size())
-
-#     for c in range(3):
-#         tensors[:, c, :, :].mul_(std[c]).add_(mean[c])
-#         # print(tensors.min(), tensors.max())
-#     # return torch.clamp(np.clip(tensors.numpy(), 0, 255))
-#     return torch.from_numpy(np.clip(tensors.cpu().detach().numpy(), 0, 255))
-
-
 def denormalize(tensors):
-    tensors = tensors.numpy()
-    return torch.from_numpy(np.clip(tensors, 0.0, 1.0))
+    """Normalization parameters for pre-trained PyTorch models
+     Denormalizes image tensors using mean and std """
+    mean = np.array([0.485, 0.456, 0.406])
+    std = np.array([0.229, 0.224, 0.225])
+
+    tensors = tensors.clone()
+    # print(tensors[:, 0, :, :].size())
+    # print(tensors[:, 1, :, :].size())
+    # print(tensors[:, 2, :, :].size())
+
+    for c in range(3):
+        tensors[:, c, :, :].mul_(std[c]).add_(mean[c])
+        # print(tensors.min(), tensors.max())
+    # return torch.clamp(np.clip(tensors.numpy(), 0, 255))
+    return torch.from_numpy(np.clip(tensors.cpu().numpy(), 0, 255))
+
+
+# def denormalize(tensors):
+#     tensors = tensors.numpy()
+#     return torch.from_numpy(np.clip(tensors, 0.0, 1.0))
 
 
 def _psnr(ground, gen):
@@ -41,13 +41,13 @@ def _ssim(ground, gen):
 
 def cal_img_metrics(generated, ground_truth):
 
-    generated = generated.clone().detach()
-    ground_truth = ground_truth.clone().detach()
+    generated = generated.clone().cpu()
+    ground_truth = ground_truth.clone().cpu()
 
     scores_PSNR = []
     scores_SSIM = []
-    # generated = denormalize(generated).permute(0, 2, 3, 1).numpy() * 255.0
-    # ground_truth = denormalize(ground_truth).permute(0, 2, 3, 1).numpy() * 255.0
+    generated = denormalize(generated).permute(0, 2, 3, 1).numpy() * 255.0
+    ground_truth = denormalize(ground_truth).permute(0, 2, 3, 1).numpy() * 255.0
 
     generated = generated.permute(0, 2, 3, 1).numpy() * 255.0
     ground_truth = ground_truth.permute(0, 2, 3, 1).numpy() * 255.0
