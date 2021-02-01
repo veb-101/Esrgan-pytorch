@@ -432,15 +432,15 @@ class Trainer:
             scale=self.scale_factor,
         ).to(self.device)
 
-        if self.is_psnr_oriented:
-            self.generator.load_state_dict(
-                torch.load("Gen_PSNR.pth", map_location=self.device)
-            )
-        else:
-            self.generator.load_state_dict(
-                torch.load("Gen_GAN.pth", map_location=self.device)
-            )
-        print("Base pretrained generator loaded")
+        # if self.is_psnr_oriented:
+        #     self.generator.load_state_dict(
+        #         torch.load("Gen_PSNR.pth", map_location=self.device)
+        #     )
+        # else:
+        #     self.generator.load_state_dict(
+        #         torch.load("Gen_GAN.pth", map_location=self.device)
+        #     )
+        # print("Base pretrained generator loaded")
         # self.generator._mrsa_init(self.generator.layers_)
 
         self.discriminator = Discriminator(
@@ -475,7 +475,7 @@ class Trainer:
             print(f"[!] No checkpoint for epoch {self.start_epoch -1}")
             return
 
-        checkpoint = torch.load(checkpoint_path)
+        checkpoint = torch.load(checkpoint_path, map_location=self.device)
 
         self.generator.load_state_dict(
             checkpoint[f"generator_dict_{self.start_epoch-1}"]
