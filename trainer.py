@@ -590,4 +590,4 @@ class Trainer:
 # console.log("Clicking");
 # document.querySelector("colab-connect-button").click()
 # }
-# setInterval(KeepClicki
+# setInterval(KeepClicking,300000)
