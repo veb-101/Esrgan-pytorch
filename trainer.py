@@ -56,6 +56,9 @@ class Trainer:
             "PSNR": [],  # validation set per epoch
         }
 
+        self.best_val_psnr = 0.0
+        self.best_val_ssim = 0.0
+
         self.build_model(config)
         self.lr_scheduler_generator = torch.optim.lr_scheduler.MultiStepLR(
             self.optimizer_generator, self.decay_iter
@@ -76,9 +79,6 @@ class Trainer:
         Tensor = torch.cuda.FloatTensor if torch.cuda.is_available() else torch.Tensor
 
         upsampler = torch.nn.Upsample(scale_factor=4, mode="bicubic")
-
-        best_val_psnr = 0.0
-        best_val_ssim = 0.0
 
         for epoch in range(self.start_epoch, self.start_epoch + self.num_epoch):
             self.generator.train()
@@ -363,12 +363,12 @@ class Trainer:
             ups_epoch_psnr = round(sum(ups_batch_psnr) / len(ups_batch_psnr), 4)
             ups_epoch_ssim = round(sum(ups_batch_ssim) / len(ups_batch_ssim), 4)
 
-            if val_epoch_psnr >= best_val_psnr:
-                best_val_psnr = val_epoch_psnr
+            if val_epoch_psnr >= self.best_val_psnr:
+                self.best_val_psnr = val_epoch_psnr
                 SAVE = True
 
-            if val_epoch_ssim >= best_val_ssim:
-                best_val_ssim = val_epoch_ssim
+            if val_epoch_ssim >= self.best_val_ssim:
+                self.best_val_ssim = val_epoch_ssim
                 SAVE = True
 
             self.metrics["PSNR"].append(val_epoch_psnr)
@@ -403,6 +403,8 @@ class Trainer:
                 f"steps_completed": steps_completed,
                 f"metrics_till_{epoch}": self.metrics,
                 f"grad_scaler_gen_{epoch}": self.scaler_gen.state_dict(),
+                f"best_psnr": self.best_val_psnr,
+                f"best_ssim": self.best_val_ssim,
             }
 
             if not self.is_psnr_oriented:
@@ -539,6 +541,8 @@ class Trainer:
             except:
                 pass
 
+        self.best_val_psnr = checkpoint["best_psnr"]
+        self.best_val_ssim = checkpoint["best_ssim"]
         self.metrics["dis_loss"] = checkpoint[f"metrics_till_{self.start_epoch-1}"][
             "dis_loss"
         ]
