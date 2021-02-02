@@ -419,7 +419,7 @@ class Trainer:
             if SAVE:
                 try:
                     print(
-                        f"Best val scores  till {epoch} -> PSNR: {best_val_psnr}, SSIM: {best_val_ssim}"
+                        f"Best val scores  till {epoch} -> PSNR: {self.best_val_psnr}, SSIM: {self.best_val_ssim}"
                     )
                     _ = [
                         os.remove(os.path.join(r"/content/", file))
@@ -435,8 +435,8 @@ class Trainer:
                         if file.startswith("checkpoint_")
                         and not file == f"checkpoint_{epoch-1}.tar"
                     ]
-                except:
-                    pass
+                except Exception as e:
+                    print(e)
 
                 torch.save(
                     models_dict, f"checkpoint_{epoch}.tar",
@@ -591,3 +591,4 @@ class Trainer:
 # document.querySelector("colab-connect-button").click()
 # }
 # setInterval(KeepClicking,300000)
+
