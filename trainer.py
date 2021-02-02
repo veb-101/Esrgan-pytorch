@@ -77,6 +77,9 @@ class Trainer:
 
         upsampler = torch.nn.Upsample(scale_factor=4, mode="bicubic")
 
+        best_val_psnr = 0.0
+        best_val_ssim = 0.0
+
         for epoch in range(self.start_epoch, self.start_epoch + self.num_epoch):
             self.generator.train()
             self.discriminator.train()
@@ -86,6 +89,8 @@ class Trainer:
             epoch_per_loss = []
             epoch_adv_loss = []
             epoch_con_loss = []
+
+            SAVE = False
 
             steps_completed = (self.start_epoch + 1) * total_step
 
@@ -358,6 +363,14 @@ class Trainer:
             ups_epoch_psnr = round(sum(ups_batch_psnr) / len(ups_batch_psnr), 4)
             ups_epoch_ssim = round(sum(ups_batch_ssim) / len(ups_batch_ssim), 4)
 
+            if val_epoch_psnr >= best_val_psnr:
+                best_val_psnr = val_epoch_psnr
+                SAVE = True
+
+            if val_epoch_ssim >= best_val_ssim:
+                best_val_ssim = val_epoch_ssim
+                SAVE = True
+
             self.metrics["PSNR"].append(val_epoch_psnr)
             self.metrics["SSIM"].append(val_epoch_ssim)
 
@@ -401,24 +414,40 @@ class Trainer:
                 ] = self.optimizer_discriminator.state_dict()
                 models_dict[f"grad_scaler_dis_{epoch}"] = self.scaler_dis.state_dict()
 
-            torch.save(
-                models_dict, f"checkpoint_{epoch}.tar",
-            )
+            if SAVE:
+                try:
+                    print(
+                        f"Best val scores  till {epoch} -> PSNR: {best_val_psnr}, SSIM: {best_val_ssim}"
+                    )
+                    _ = [
+                        os.remove(os.path.join(r"/content/", file))
+                        for file in os.listdir(r"/content/")
+                        if file.startswith("checkpoint_")
+                        and not file == f"checkpoint_{epoch-1}.tar"
+                    ]
+                    _ = [
+                        os.remove(
+                            os.path.join(r"/content/drive/MyDrive/Project-ESRGAN", file)
+                        )
+                        for file in os.listdir(r"/content/drive/MyDrive/Project-ESRGAN")
+                        if file.startswith("checkpoint_")
+                        and not file == f"checkpoint_{epoch-1}.tar"
+                    ]
+                except:
+                    pass
 
-            shutil.copyfile(
-                f"checkpoint_{epoch}.tar",
-                os.path.join(
-                    r"/content/drive/MyDrive/Project-ESRGAN", rf"checkpoint_{epoch}.tar"
-                ),
-            )
-            if os.path.exists(f"checkpoint_{epoch-1}.tar"):
-                os.remove(f"checkpoint_{epoch-1}.tar")
-                os.remove(
+                torch.save(
+                    models_dict, f"checkpoint_{epoch}.tar",
+                )
+
+                shutil.copyfile(
+                    f"checkpoint_{epoch}.tar",
                     os.path.join(
                         r"/content/drive/MyDrive/Project-ESRGAN",
-                        rf"checkpoint_{epoch-1}.tar",
-                    )
+                        rf"checkpoint_{epoch}.tar",
+                    ),
                 )
+
             torch.cuda.empty_cache()
             gc.collect()
         return self.metrics
