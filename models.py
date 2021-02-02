@@ -5,6 +5,7 @@ import math as m
 import torch
 import torch.nn as nn
 import functools
+import torch.nn.functional as F
 from torchvision.models import vgg19
 
 # from torchsummary import summary
@@ -177,6 +178,12 @@ class ResidualDenseBlock_5C(nn.Module):
         x5 = self.conv5(torch.cat((x, x1, x2, x3, x4), 1))
         return x5 * 0.2 + x
 
+    def weights_init(self):
+        for module in self.modules():
+            if isinstance(module, nn.Conv2d):
+                # module.weight = torch.nn.Parameter(data=nn.init.kaiming_normal_(module.weight, 0.2) * 0.1)
+                module.weight.data = nn.init.kaiming_normal_(module.weight, 0.2) * 0.1
+
 
 class RRDB(nn.Module):
     """Residual in Residual Dense Block"""
@@ -186,6 +193,10 @@ class RRDB(nn.Module):
         self.RDB1 = ResidualDenseBlock_5C(nf, gc)
         self.RDB2 = ResidualDenseBlock_5C(nf, gc)
         self.RDB3 = ResidualDenseBlock_5C(nf, gc)
+
+        self.RDB1.weights_init()
+        self.RDB2.weights_init()
+        self.RDB3.weights_init()
 
     def forward(self, x):
         out = self.RDB1(x)
@@ -207,48 +218,38 @@ class Generator(nn.Module):
         self.RRDB_trunk = make_layer(RRDB_block_f, num_res_blocks)
         self.trunk_conv = nn.Conv2d(nf, nf, 3, 1, 1, bias=True)
 
-        # Upsampling layers
-        upsample_layers = []
+        #### upsampling
+        self.upconv1 = nn.Conv2d(nf, nf, 3, 1, 1, bias=True)
+        self.upconv2 = nn.Conv2d(nf, nf, 3, 1, 1, bias=True)
+        self.HRconv = nn.Conv2d(nf, nf, 3, 1, 1, bias=True)
+        self.conv_last = nn.Conv2d(nf, channels, 3, 1, 1, bias=True)
 
-        for _ in range(scale_factor):
-            upsample_layers.append(
-                nn.Sequential(
-                    nn.ReflectionPad2d(1),
-                    nn.Conv2d(nf, nf * 4, kernel_size=3, stride=1),
-                    nn.LeakyReLU(),
-                    nn.PixelShuffle(upscale_factor=2),
-                )
-            )
+        self.lrelu = nn.LeakyReLU(negative_slope=0.2, inplace=True)
 
-        self.upsampling = nn.Sequential(*upsample_layers)
+        self.layers_ = [self.upconv1, self.upconv2, self.HRconv]
 
-        # Final block
-        self.conv3 = nn.Sequential(
-            nn.ReflectionPad2d(1),
-            nn.Conv2d(nf, nf, kernel_size=3, stride=1),
-            nn.LeakyReLU(),
-            nn.ReflectionPad2d(1),
-            nn.Conv2d(nf, channels, kernel_size=3, stride=1),
+    def forward(self, x):
+        fea = self.conv_first(x)
+        trunk = self.trunk_conv(self.RRDB_trunk(fea))
+        fea = fea + trunk
+
+        fea = self.lrelu(
+            self.upconv1(F.interpolate(fea, scale_factor=2, mode="nearest"))
         )
+        fea = self.lrelu(
+            self.upconv2(F.interpolate(fea, scale_factor=2, mode="nearest"))
+        )
+        out = self.conv_last(self.lrelu(self.HRconv(fea)))
 
-        self.layers_ = [*upsample_layers, self.conv3]
+        return out
 
-    def _mrsa_init(self, layers_):
-        for layer in layers_:
+    def _mrsa_init(self, layers):
+        for layer in layers:
             for module in layer.modules():
                 if isinstance(module, nn.Conv2d):
                     # print("here")
                     # module.weight = torch.nn.Parameter(data=nn.init.kaiming_normal_(module.weight, 0.2) * 0.1)
                     module.weight.data = nn.init.kaiming_normal_(module.weight) * 0.1
-
-    def forward(self, x):
-        out1 = self.conv_first(x)
-        out = self.RRDB_trunk(out1)
-        out2 = self.trunk_conv(out)
-        out = torch.add(out1, out2)
-        out = self.upsampling(out)
-        out = self.conv3(out)
-        return out
 
 
 class Discriminator(nn.Module):
@@ -317,7 +318,7 @@ if __name__ == "__main__":
     from torchsummary import summary
 
     model = Generator(num_res_blocks=23, nf=64, gc=32)
-    model.load_state_dict(torch.load("Gen_GAN.pth"), strict=True)
+    # model.load_state_dict(torch.load("Gen_GAN.pth"), strict=True)
     model._mrsa_init(model.layers_)
 
     summary(model, (3, 64, 64))
