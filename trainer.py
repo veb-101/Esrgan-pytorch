@@ -506,7 +506,7 @@ class Trainer:
             print(f"[!] No checkpoint for epoch {self.start_epoch -1}")
             return
 
-        checkpoint = torch.load(checkpoint_path)
+        checkpoint = torch.load(checkpoint_path, map_location=self.device)
 
         self.generator.load_state_dict(
             checkpoint[f"generator_dict_{self.start_epoch-1}"]
@@ -562,15 +562,17 @@ class Trainer:
         self.metrics["SSIM"] = checkpoint[f"metrics_till_{self.start_epoch-1}"]["SSIM"]
         self.start_epoch = checkpoint["next_epoch"]
 
-        self.decay_iter = np.array(self.decay_iter) - self.start_epoch
-
         temp = []
-        for i in self.decay_iter:
-            if i > 0:
-                temp.append(i)
+
+        if self.decay_iter:
+            self.decay_iter = np.array(self.decay_iter) - self.start_epoch
+
+            for i in self.decay_iter:
+                if i > 0:
+                    temp.append(i)
 
         if not temp:
-            temp.append(100)
+            temp.append(200)
 
         self.decay_iter = temp
         print(self.decay_iter)
@@ -588,4 +590,4 @@ class Trainer:
 # console.log("Clicking");
 # document.querySelector("colab-connect-button").click()
 # }
-# setInterval(KeepClicking,300000)
+# setInterval(KeepClicki
