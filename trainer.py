@@ -416,39 +416,29 @@ class Trainer:
                 ] = self.optimizer_discriminator.state_dict()
                 models_dict[f"grad_scaler_dis_{epoch}"] = self.scaler_dis.state_dict()
 
+            save_name = f"checkpoint_{epoch}.tar"
+
             if SAVE:
-                try:
-                    print(
-                        f"Best val scores  till {epoch} -> PSNR: {self.best_val_psnr}, SSIM: {self.best_val_ssim}"
-                    )
-                    _ = [
-                        os.remove(os.path.join(r"/content/", file))
-                        for file in os.listdir(r"/content/")
-                        if file.startswith("checkpoint_")
-                        and not file == f"checkpoint_{epoch-1}.tar"
-                    ]
-                    _ = [
-                        os.remove(
-                            os.path.join(r"/content/drive/MyDrive/Project-ESRGAN", file)
-                        )
-                        for file in os.listdir(r"/content/drive/MyDrive/Project-ESRGAN")
-                        if file.startswith("checkpoint_")
-                        and not file == f"checkpoint_{epoch-1}.tar"
-                    ]
-                except Exception as e:
-                    print(e)
+                # remove all previous best checkpoints
+                _ = [os.remove(os.path.join(r"/content/", file))
+                     for file in os.listdir(r"/content/") if file.startswith("best_")]
 
-                torch.save(
-                    models_dict, f"checkpoint_{epoch}.tar",
+                _ = [os.remove(os.path.join(r"/content/drive/MyDrive/Project-ESRGAN", file))
+                     for file in os.listdir(r"/content/drive/MyDrive/Project-ESRGAN") if file.startswith("best_")]
+                save_name = f"best_checkpoint_{epoch}.tar"
+                print(
+                    f"Best val scores  till epoch {epoch} -> PSNR: {self.best_val_psnr}, SSIM: {self.best_val_ssim}"
                 )
 
-                shutil.copyfile(
-                    f"checkpoint_{epoch}.tar",
-                    os.path.join(
-                        r"/content/drive/MyDrive/Project-ESRGAN",
-                        rf"checkpoint_{epoch}.tar",
-                    ),
-                )
+            if save_name.startswith("checkpoint"):
+                _ = [os.remove(os.path.join(r"/content/", file))
+                     for file in os.listdir(r"/content/") if file.startswith("checkpoint")]
+                _ = [os.remove(os.path.join(r"/content/drive/MyDrive/Project-ESRGAN", file))
+                     for file in os.listdir(r"/content/drive/MyDrive/Project-ESRGAN") if file.startswith("checkpoint")]
+
+            torch.save(models_dict, save_name)
+            shutil.copyfile(
+                save_name, os.path.join(r"/content/drive/MyDrive/Project-ESRGAN", save_name))
 
             torch.cuda.empty_cache()
             gc.collect()
@@ -591,4 +581,3 @@ class Trainer:
 # document.querySelector("colab-connect-button").click()
 # }
 # setInterval(KeepClicking,300000)
-
