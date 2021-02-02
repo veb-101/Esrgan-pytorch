@@ -19,14 +19,8 @@ def denormalize(tensors):
 
     for c in range(3):
         tensors[:, c, :, :].mul_(std[c]).add_(mean[c])
-        # print(tensors.min(), tensors.max())
-    # return torch.clamp(np.clip(tensors.numpy(), 0, 255))
+
     return torch.from_numpy(np.clip(tensors.cpu().numpy(), 0, 255))
-
-
-# def denormalize(tensors):
-#     tensors = tensors.numpy()
-#     return torch.from_numpy(np.clip(tensors, 0.0, 1.0))
 
 
 def _psnr(ground, gen):
@@ -49,8 +43,6 @@ def cal_img_metrics(generated, ground_truth):
     generated = denormalize(generated).permute(0, 2, 3, 1).numpy() * 255.0
     ground_truth = denormalize(ground_truth).permute(0, 2, 3, 1).numpy() * 255.0
 
-    generated = generated.permute(0, 2, 3, 1).numpy() * 255.0
-    ground_truth = ground_truth.permute(0, 2, 3, 1).numpy() * 255.0
 
     for i in range(len(ground_truth)):
         ground = ground_truth[i]
