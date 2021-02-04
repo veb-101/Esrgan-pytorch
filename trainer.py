@@ -56,9 +56,6 @@ class Trainer:
             "PSNR": [],  # validation set per epoch
         }
 
-        self.best_val_psnr = 0.0
-        self.best_val_ssim = 0.0
-
         self.build_model(config)
         self.lr_scheduler_generator = torch.optim.lr_scheduler.MultiStepLR(
             self.optimizer_generator, self.decay_iter
@@ -79,6 +76,9 @@ class Trainer:
         Tensor = torch.cuda.FloatTensor if torch.cuda.is_available() else torch.Tensor
 
         upsampler = torch.nn.Upsample(scale_factor=4, mode="bicubic")
+
+        best_val_psnr = 0.0
+        best_val_ssim = 0.0
 
         for epoch in range(self.start_epoch, self.start_epoch + self.num_epoch):
             self.generator.train()
@@ -353,7 +353,6 @@ class Trainer:
                         upsampler(val_low_resolution.detach().cpu()),
                         val_high_resolution.detach().cpu(),
                     )
-
                     ups_batch_psnr.append(ups_psnr)
                     ups_batch_ssim.append(ups_ssim)
 
@@ -363,12 +362,12 @@ class Trainer:
             ups_epoch_psnr = round(sum(ups_batch_psnr) / len(ups_batch_psnr), 4)
             ups_epoch_ssim = round(sum(ups_batch_ssim) / len(ups_batch_ssim), 4)
 
-            if val_epoch_psnr >= self.best_val_psnr:
-                self.best_val_psnr = val_epoch_psnr
+            if val_epoch_psnr > best_val_psnr:
+                best_val_psnr = val_epoch_psnr
                 SAVE = True
 
-            if val_epoch_ssim >= self.best_val_ssim:
-                self.best_val_ssim = val_epoch_ssim
+            if val_epoch_ssim > best_val_ssim:
+                best_val_ssim = val_epoch_ssim
                 SAVE = True
 
             self.metrics["PSNR"].append(val_epoch_psnr)
@@ -377,7 +376,6 @@ class Trainer:
             print(f"Validation Set: PSNR: {val_epoch_psnr}, SSIM:{val_epoch_ssim}")
             print(f"Bicubic Ups: PSNR: {ups_epoch_psnr}, SSIM:{ups_epoch_ssim}")
 
-            # visualization
             result_val = torch.cat(
                 (
                     denormalize(val_high_resolution.detach().cpu()),
@@ -403,8 +401,6 @@ class Trainer:
                 f"steps_completed": steps_completed,
                 f"metrics_till_{epoch}": self.metrics,
                 f"grad_scaler_gen_{epoch}": self.scaler_gen.state_dict(),
-                f"best_psnr": self.best_val_psnr,
-                f"best_ssim": self.best_val_ssim,
             }
 
             if not self.is_psnr_oriented:
@@ -420,28 +416,47 @@ class Trainer:
 
             if SAVE:
                 # remove all previous best checkpoints
-                _ = [os.remove(os.path.join(r"/content/", file))
-                     for file in os.listdir(r"/content/") if file.startswith("best_")]
+                _ = [
+                    os.remove(os.path.join(r"/content/", file))
+                    for file in os.listdir(r"/content/")
+                    if file.startswith("best_")
+                ]
 
-                _ = [os.remove(os.path.join(r"/content/drive/MyDrive/Project-ESRGAN", file))
-                     for file in os.listdir(r"/content/drive/MyDrive/Project-ESRGAN") if file.startswith("best_")]
+                _ = [
+                    os.remove(
+                        os.path.join(r"/content/drive/MyDrive/Project-ESRGAN", file)
+                    )
+                    for file in os.listdir(r"/content/drive/MyDrive/Project-ESRGAN")
+                    if file.startswith("best_")
+                ]
                 save_name = f"best_checkpoint_{epoch}.tar"
                 print(
-                    f"Best val scores  till epoch {epoch} -> PSNR: {self.best_val_psnr}, SSIM: {self.best_val_ssim}"
+                    f"Best val scores  till epoch {epoch} -> PSNR: {best_val_psnr}, SSIM: {best_val_ssim}"
                 )
 
             if save_name.startswith("checkpoint"):
-                _ = [os.remove(os.path.join(r"/content/", file))
-                     for file in os.listdir(r"/content/") if file.startswith("checkpoint")]
-                _ = [os.remove(os.path.join(r"/content/drive/MyDrive/Project-ESRGAN", file))
-                     for file in os.listdir(r"/content/drive/MyDrive/Project-ESRGAN") if file.startswith("checkpoint")]
+                _ = [
+                    os.remove(os.path.join(r"/content/", file))
+                    for file in os.listdir(r"/content/")
+                    if file.startswith("checkpoint")
+                ]
+                _ = [
+                    os.remove(
+                        os.path.join(r"/content/drive/MyDrive/Project-ESRGAN", file)
+                    )
+                    for file in os.listdir(r"/content/drive/MyDrive/Project-ESRGAN")
+                    if file.startswith("checkpoint")
+                ]
 
             torch.save(models_dict, save_name)
             shutil.copyfile(
-                save_name, os.path.join(r"/content/drive/MyDrive/Project-ESRGAN", save_name))
+                save_name,
+                os.path.join(r"/content/drive/MyDrive/Project-ESRGAN", save_name),
+            )
 
             torch.cuda.empty_cache()
             gc.collect()
+
         return self.metrics
 
     def build_model(self, config):
@@ -453,15 +468,6 @@ class Trainer:
             scale=self.scale_factor,
         ).to(self.device)
 
-        # if self.is_psnr_oriented:
-        #     self.generator.load_state_dict(
-        #         torch.load("Gen_PSNR.pth", map_location=self.device)
-        #     )
-        # else:
-        #     self.generator.load_state_dict(
-        #         torch.load("Gen_GAN.pth", map_location=self.device)
-        #     )
-        # print("Base pretrained generator loaded")
         self.generator._mrsa_init(self.generator.layers_)
 
         self.discriminator = Discriminator(
@@ -531,8 +537,6 @@ class Trainer:
             except:
                 pass
 
-        self.best_val_psnr = checkpoint["best_psnr"]
-        self.best_val_ssim = checkpoint["best_ssim"]
         self.metrics["dis_loss"] = checkpoint[f"metrics_till_{self.start_epoch-1}"][
             "dis_loss"
         ]
