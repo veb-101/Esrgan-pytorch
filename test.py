@@ -1,69 +1,76 @@
-from skimage.metrics import structural_similarity as ssim
-from skimage.metrics import peak_signal_noise_ratio as psnr
-import cv2
-import numpy as np
+import torch.nn as nn
 
 
-def _psnr(ground, gen):
-    score = psnr(ground, gen)
-    return round(score, 3)
+class Discriminator(nn.Module):
+    def __init__(self, num_in_ch=3, num_feat=64, input_shape=(3, 512, 512)):
+        super().__init__()
+
+        self.input_shape = input_shape
+        in_channels, in_height, in_width = self.input_shape
+        patch_h, patch_w = int(in_height / 2 ** 4), int(in_width / 2 ** 4)
+        self.output_shape = (1, patch_h, patch_w)
+
+        def discriminator_block(in_filters, out_filters, first_block=False):
+            layers = []
+            layers.append(
+                nn.Sequential(
+                    nn.ReflectionPad2d(1),
+                    nn.Conv2d(
+                        in_filters, out_filters, kernel_size=3, stride=1, bias=False
+                    ),
+                )
+            )
+            if not first_block:
+                layers.append(nn.BatchNorm2d(out_filters))
+            layers.append(nn.LeakyReLU(0.2, inplace=True))
+            layers.append(
+                nn.Sequential(
+                    nn.ReflectionPad2d(1),
+                    nn.Conv2d(
+                        out_filters, out_filters, kernel_size=3, stride=2, bias=False
+                    ),
+                )
+            )
+            layers.append(nn.BatchNorm2d(out_filters))
+            layers.append(nn.LeakyReLU(0.2, inplace=True))
+            return layers
+
+        layers = []
+        in_filters = in_channels
+        for i, out_filters in enumerate([64, 128, 256, 512]):
+            layers.extend(
+                discriminator_block(in_filters, out_filters, first_block=(i == 0))
+            )
+            in_filters = out_filters
+
+        layers.append(
+            nn.Sequential(
+                nn.ReflectionPad2d(1),
+                nn.Conv2d(out_filters, 1, kernel_size=3, stride=1, bias=False),
+            )
+        )
+
+        self.model = nn.Sequential(*layers)
+
+    def forward(self, img):
+        return self.model(img)
+
+    # def _weights_init(self):
+    #     for module in self.modules():
+    #         if isinstance(module, nn.Conv2d):
+    #             # print("here")
+    #             # module.weight = torch.nn.Parameter(data=nn.init.kaiming_normal_(module.weight, 0.2) * 0.1)
+    #             module.weight.data = nn.init.kaiming_normal_(module.weight) * 0.1
 
 
-def _ssim(ground, gen):
-    score = ssim(gen, ground,
-                 data_range=ground.max() - ground.min(),
-                 multichannel=True)
-    return round(score, 3)
+if __name__ == "__main__":
+    from torchsummary import summary
 
+    # model = Generator(num_res_blocks=23, nf=64, gc=32)
+    # model.load_state_dict(torch.load("Gen_GAN.pth"), strict=True)
+    # model._mrsa_init(model.layers_)
 
-def cal_img_metrics(generated, ground_truth):
+    # summary(model, (3, 64, 64))
 
-    generated = generated.clone().detach()
-    ground_truth = ground_truth.clone().detach()
-
-    scores_PSNR = []
-    scores_SSIM = []
-    generated = denormalize(generated).permute(0, 2, 3, 1).numpy()
-    ground_truth = denormalize(ground_truth).permute(0, 2, 3, 1).numpy()
-
-    # gen = gen.permute(0, 2, 3, 1).numpy() * 255.0
-    # ground = ground.permute(0, 2, 3, 1).numpy() * 255.0
-
-    for i in range(ground_truth.size(0)):
-        ground = ground_truth[i]
-        gen = generated[i]
-
-        # print(ground_truth.max() - ground_truth.min())
-        psnr_ = _psnr(ground, gen)
-        ssim_ = _ssim(ground, gen)
-
-        scores_PSNR.append(psnr_)
-        scores_SSIM.append(ssim_)
-
-    return (
-        round(sum(scores_PSNR) / len(scores_PSNR), 3),
-        round(sum(scores_SSIM) / len(scores_SSIM), 3),
-    )
-
-
-if __name__ == '__main__':
-
-    image_path_lr = r"images/lr/00000.png"
-    image_path_hr = r"images/hr/00000.png"
-
-    image_1 = cv2.imread(image_path_lr, cv2.IMREAD_COLOR)
-    image_1 = cv2.cvtColor(image_1, cv2.COLOR_BGR2RGB)
-
-    image_2 = cv2.imread(image_path_hr, cv2.IMREAD_COLOR)
-    image_2 = cv2.cvtColor(image_2, cv2.COLOR_BGR2RGB)
-    # print(help(cv2.resize))
-    image_2 = cv2.resize(image_2, (128, 128),
-                         interpolation=cv2.INTER_CUBIC)
-
-    image_1 = image_1.astype(np.float32)
-    image_1 = image_1 // 255.0
-
-    image_2 = image_2.astype(np.float32)
-    image_2 = image_2 // 255.0
-
-    print(cal_img_metrics(image_1, image_2))
+    model = Discriminator()
+    summary(model, (3, 256, 256))

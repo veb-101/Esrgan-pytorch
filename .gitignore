@@ -13,3 +13,4 @@ train (1).py
 test.py
 *.pth
 .gitignore
+test.py
