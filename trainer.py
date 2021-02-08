@@ -115,6 +115,7 @@ class Trainer:
                         np.ones(
                             (low_resolution.size(0), *self.discriminator.output_shape)
                         )
+                        * 0.9
                     ),
                     requires_grad=False,
                 )
@@ -141,6 +142,9 @@ class Trainer:
                     )
 
                     if not self.is_psnr_oriented:
+                        for p in self.discriminator.parameters():
+                            p.requires_grad = False
+
                         # Extract validity predictions from discriminator
                         score_real = self.discriminator(high_resolution).detach()
                         score_fake = self.discriminator(fake_high_resolution)
@@ -193,50 +197,75 @@ class Trainer:
                 epoch_gen_loss.append(self.metrics["gen_loss"][-1])
                 epoch_con_loss.append(self.metrics["con_loss"][-1])
 
-                torch.cuda.empty_cache()
-                gc.collect()
-
                 ##########################
                 # training discriminator #
                 ##########################
                 if not self.is_psnr_oriented:
                     self.optimizer_discriminator.zero_grad()
-
-                    with torch.no_grad():
-                        with amp.autocast():
-                            fake_high_resolution = self.generator(low_resolution)
+                    for p in self.discriminator.parameters():
+                        p.requires_grad = True
 
                     with amp.autocast():
                         score_real = self.discriminator(high_resolution)
-                        score_fake = self.discriminator(fake_high_resolution.detach())
+
+                        score_fake = self.discriminator(fake_high_resolution).detach()
+
+                        # real
                         discriminator_rf = score_real - score_fake.mean(
                             axis=0, keepdim=True
                         )
+                        adversarial_loss_rf = (
+                            adversarial_criterion(discriminator_rf, real_labels) * 0.5
+                        )
+                        adversarial_loss_rf.backward()
+
+                        # fake
+                        score_fake = self.discriminator(fake_high_resolution.detach())
+
                         discriminator_fr = score_fake - score_real.mean(
                             axis=0, keepdim=True
                         )
-
-                        adversarial_loss_rf = adversarial_criterion(
-                            discriminator_rf, real_labels
+                        adversarial_loss_fr = (
+                            adversarial_criterion(discriminator_fr, fake_labels) * 0.5
                         )
-                        adversarial_loss_fr = adversarial_criterion(
-                            discriminator_fr, fake_labels
-                        )
-                        discriminator_loss = (
-                            adversarial_loss_fr + adversarial_loss_rf
-                        ) / 2
 
-                    self.scaler_dis.scale(discriminator_loss).backward()
-                    self.scaler_dis.step(self.optimizer_discriminator)
-                    dis_scale_val = self.scaler_gen.get_scale()
-                    self.scaler_dis.update()
-                    skip_dis_lr_sched = dis_scale_val != self.scaler_dis.get_scale()
-                    # discriminator_loss.backward()
-                    # self.optimizer_discriminator.step()
+                        adversarial_loss_fr.backward()
+                        # score_real = self.discriminator(high_resolution)
+                        # score_fake = self.discriminator(fake_high_resolution.detach())
+                        # discriminator_rf = score_real - score_fake.mean(
+                        #     axis=0, keepdim=True
+                        # )
 
-                    self.metrics["dis_loss"].append(
-                        np.round(discriminator_loss.detach().item(), 5)
+                        # adversarial_loss_rf = adversarial_criterion(
+                        #     discriminator_rf, real_labels
+                        # )
+
+                        # discriminator_loss = (
+                        #     adversarial_loss_fr + adversarial_loss_rf
+                        # ) / 2
+
+                    self.scaler_dis_real.scale(adversarial_loss_rf).backward()
+                    self.scaler_dis_real.step(self.optimizer_discriminator)
+                    dis_real_scale_val = self.scaler_dis_real.get_scale()
+                    self.scaler_dis_real.update()
+                    skip_dis_real_lr_sched = (
+                        dis_real_scale_val != self.scaler_dis_real.get_scale()
                     )
+
+                    self.scaler_dis_fake.scale(adversarial_loss_rf).backward()
+                    self.scaler_dis_fake.step(self.optimizer_discriminator)
+                    dis_fake_scale_val = self.scaler_dis_fake.get_scale()
+                    self.scaler_dis_fake.update()
+                    skip_dis_fake_lr_sched = (
+                        dis_fake_scale_val != self.scaler_dis_fake.get_scale()
+                    )
+
+                    discriminator_loss = (
+                        adversarial_loss_rf.detach().item()
+                        + adversarial_loss_fr.detach().item()
+                    )
+
+                    self.metrics["dis_loss"].append(np.round(discriminator_loss, 5))
 
                     # generator metrics
                     self.metrics["adv_loss"].append(
@@ -320,7 +349,9 @@ class Trainer:
                 self.lr_scheduler_generator.step()
 
             if not self.is_psnr_oriented:
-                if not skip_dis_lr_sched:
+                if not skip_dis_real_lr_sched:
+                    self.lr_scheduler_discriminator.step()
+                if not skip_dis_fake_lr_sched:
                     self.lr_scheduler_discriminator.step()
 
             # validation set SSIM and PSNR
@@ -482,13 +513,14 @@ class Trainer:
         )
         self.optimizer_discriminator = Adam(
             self.discriminator.parameters(),
-            lr=self.lr,
+            lr=0.0004,
             betas=(config["b1"], config["b2"]),
             weight_decay=config["weight_decay"],
         )
 
         self.scaler_gen = torch.cuda.amp.GradScaler()
-        self.scaler_dis = torch.cuda.amp.GradScaler()
+        self.scaler_dis_real = torch.cuda.amp.GradScaler()
+        self.scaler_dis_fake = torch.cuda.amp.GradScaler()
 
         self.load_model()
 
