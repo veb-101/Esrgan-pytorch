@@ -12,8 +12,10 @@ from torch.autograd import Variable
 
 from torchvision.utils import save_image
 
-from models import PerceptualLoss, Generator, Discriminator
-from utils import cal_img_metrics, denormalize
+from models import PerceptualLoss, Generator, Discriminator, InceptionV3
+from utils import cal_img_metrics, denormalize, cal_fretchet
+
+import wandb
 
 
 class Trainer:
@@ -72,13 +74,21 @@ class Trainer:
         content_criterion = nn.L1Loss().to(self.device)
         perception_criterion = PerceptualLoss().to(self.device)
 
-        steps_completed = 0
         Tensor = torch.cuda.FloatTensor if torch.cuda.is_available() else torch.Tensor
 
-        upsampler = torch.nn.Upsample(scale_factor=4, mode="bicubic")
+        # FID score
+        FID_DIM = 2048
+        block_idx = InceptionV3.BLOCK_INDEX_BY_DIM[FID_DIM]
+        fid_model = InceptionV3([block_idx])
+        fid_model.to(self.device)
 
         best_val_psnr = 0.0
         best_val_ssim = 0.0
+        best_val_fid = np.inf
+
+        # FOR BICUBIC
+        already_calculated_bicubic = False
+        upsampler = torch.nn.Upsample(scale_factor=4, mode="bicubic")
 
         for epoch in range(self.start_epoch, self.start_epoch + self.num_epoch):
             self.generator.train()
@@ -91,8 +101,6 @@ class Trainer:
             epoch_con_loss = []
 
             SAVE = False
-
-            steps_completed = (self.start_epoch + 1) * total_step
 
             training_loader_iter = iter(self.data_loader_train)
             length_train = len(training_loader_iter)
@@ -115,7 +123,6 @@ class Trainer:
                         np.ones(
                             (low_resolution.size(0), *self.discriminator.output_shape)
                         )
-                        * 0.9
                     ),
                     requires_grad=False,
                 )
@@ -217,7 +224,6 @@ class Trainer:
                         adversarial_loss_rf = (
                             adversarial_criterion(discriminator_rf, real_labels) * 0.5
                         )
-                        adversarial_loss_rf.backward()
 
                         # fake
                         score_fake = self.discriminator(fake_high_resolution.detach())
@@ -229,7 +235,6 @@ class Trainer:
                             adversarial_criterion(discriminator_fr, fake_labels) * 0.5
                         )
 
-                        adversarial_loss_fr.backward()
                         # score_real = self.discriminator(high_resolution)
                         # score_fake = self.discriminator(fake_high_resolution.detach())
                         # discriminator_rf = score_real - score_fake.mean(
@@ -244,21 +249,14 @@ class Trainer:
                         #     adversarial_loss_fr + adversarial_loss_rf
                         # ) / 2
 
-                    self.scaler_dis_real.scale(adversarial_loss_rf).backward()
-                    self.scaler_dis_real.step(self.optimizer_discriminator)
-                    dis_real_scale_val = self.scaler_dis_real.get_scale()
-                    self.scaler_dis_real.update()
-                    skip_dis_real_lr_sched = (
-                        dis_real_scale_val != self.scaler_dis_real.get_scale()
+                    self.scaler_dis.scale(adversarial_loss_rf).backward(
+                        retain_graph=True
                     )
-
-                    self.scaler_dis_fake.scale(adversarial_loss_rf).backward()
-                    self.scaler_dis_fake.step(self.optimizer_discriminator)
-                    dis_fake_scale_val = self.scaler_dis_fake.get_scale()
-                    self.scaler_dis_fake.update()
-                    skip_dis_fake_lr_sched = (
-                        dis_fake_scale_val != self.scaler_dis_fake.get_scale()
-                    )
+                    self.scaler_dis.scale(adversarial_loss_fr).backward()
+                    self.scaler_dis.step(self.optimizer_discriminator)
+                    dis_scale_val = self.scaler_dis.get_scale()
+                    self.scaler_dis.update()
+                    skip_dis_lr_sched = dis_scale_val != self.scaler_dis.get_scale()
 
                     discriminator_loss = (
                         adversarial_loss_rf.detach().item()
@@ -294,16 +292,16 @@ class Trainer:
                     if not self.is_psnr_oriented:
                         print(
                             f"[Epoch {epoch}/{self.start_epoch+self.num_epoch-1}] [Batch {step+1}/{total_step}]"
-                            f"[D loss {round(self.metrics['dis_loss'][-1], 4)}] [G loss {round(self.metrics['gen_loss'][-1], 4)}]"
-                            f"[perceptual loss {round(self.metrics['per_loss'][-1], 4)}]"
-                            f"[adversarial loss {round(self.metrics['adv_loss'][-1], 4)}]"
-                            f"[content loss {round(self.metrics['con_loss'][-1], 4)}]"
+                            f"[D loss {self.metrics['dis_loss'][-1]}] [G loss {self.metrics['gen_loss'][-1]}]"
+                            f"[perceptual loss {self.metrics['per_loss'][-1]}]"
+                            f"[adversarial loss {self.metrics['adv_loss'][-1]}]"
+                            f"[content loss {self.metrics['con_loss'][-1]}]"
                             f""
                         )
                     else:
                         print(
                             f"[Epoch {epoch}/{self.start_epoch+self.num_epoch-1}] [Batch {step+1}/{total_step}] "
-                            f"[content loss {round(self.metrics['con_loss'][-1], 4)}]"
+                            f"[content loss {self.metrics['con_loss'][-1]}]"
                         )
 
                     result = torch.cat(
@@ -337,6 +335,17 @@ class Trainer:
                     f"Con loss:: {np.round(np.array(epoch_con_loss).mean(), 4)}"
                     f""
                 )
+                wandb.log(
+                    {
+                        "epoch": epoch + 1,
+                        "Dis_loss": np.round(np.array(epoch_dis_loss).mean(), 4),
+                        "Gen_loss": np.round(np.array(epoch_gen_loss).mean(), 4),
+                        "Con_loss": np.round(np.array(epoch_con_loss).mean(), 4),
+                        "Per_loss": np.round(np.array(epoch_per_loss).mean(), 4),
+                        "Adv_loss": np.round(np.array(epoch_adv_loss).mean(), 4),
+                        "Con_loss": np.round(np.array(epoch_con_loss).mean(), 4),
+                    }
+                )
             else:
                 print(
                     f"Epoch: {epoch} -> "
@@ -344,54 +353,126 @@ class Trainer:
                     f"Con loss:: {np.round(np.array(epoch_con_loss).mean(), 4)}"
                     f""
                 )
+                wandb.log(
+                    {
+                        "epoch": epoch + 1,
+                        "Gen_loss": np.round(np.array(epoch_gen_loss).mean(), 4),
+                        "Con_loss": np.round(np.array(epoch_con_loss).mean(), 4),
+                    }
+                )
 
             if not skip_gen_lr_sched:
                 self.lr_scheduler_generator.step()
 
             if not self.is_psnr_oriented:
-                if not skip_dis_real_lr_sched:
-                    self.lr_scheduler_discriminator.step()
-                if not skip_dis_fake_lr_sched:
+                if not skip_dis_lr_sched:
                     self.lr_scheduler_discriminator.step()
 
             # validation set SSIM and PSNR
             val_batch_psnr = []
             val_batch_ssim = []
+            val_batch_FID = []
 
-            ups_batch_psnr = []
-            ups_batch_ssim = []
+            if not already_calculated_bicubic:
+                ups_batch_psnr = []
+                ups_batch_ssim = []
+                ups_batch_FID = []
 
-            for image_val in self.data_loader_val:
+            for idx, image_val in enumerate(self.data_loader_val):
                 val_low_resolution = image_val["lr"].to(self.device)
                 val_high_resolution = image_val["hr"].to(self.device)
 
                 self.generator.eval()
+
                 with torch.no_grad():
                     with amp.autocast():
                         val_fake_high_res = self.generator(val_low_resolution).detach()
 
-                    # image metrics PSNR and SSIM
+                        # generated image metrics FID, PSNR, SSIM
+                        val_fid = cal_fretchet(
+                            val_high_resolution.detach(),
+                            val_fake_high_res,
+                            fid_model,
+                            dims=FID_DIM,
+                        )
+
                     val_psnr, val_ssim = cal_img_metrics(
-                        val_fake_high_res.detach().cpu(),
-                        val_high_resolution.detach().cpu(),
+                        val_fake_high_res, val_high_resolution,
                     )
 
                     val_batch_psnr.append(val_psnr)
                     val_batch_ssim.append(val_ssim)
+                    val_batch_FID.append(val_fid)
 
-                    # image metrics PSNR and SSIM
-                    ups_psnr, ups_ssim = cal_img_metrics(
-                        upsampler(val_low_resolution.detach().cpu()),
-                        val_high_resolution.detach().cpu(),
-                    )
-                    ups_batch_psnr.append(ups_psnr)
-                    ups_batch_ssim.append(ups_ssim)
+                    # bicubic image metrics FID, PSNR, SSIM
+                    if not already_calculated_bicubic:
+                        with amp.autocast():
+                            ups_fid = cal_fretchet(
+                                val_high_resolution,
+                                val_low_resolution.detach(),
+                                fid_model,
+                                FID_DIM,
+                            )
+
+                        ups_psnr, ups_ssim = cal_img_metrics(
+                            upsampler(val_low_resolution.cpu()),
+                            val_high_resolution.cpu(),
+                        )
+
+                        ups_batch_psnr.append(ups_psnr)
+                        ups_batch_ssim.append(ups_ssim)
+                        ups_batch_FID.append(ups_fid)
+
+                # visualization
+                val_fake_high_res = val_fake_high_res.cpu()
+                val_high_resolution = val_high_resolution.cpu()
+                val_low_resolution = val_low_resolution.cpu()
+                result_val = torch.cat(
+                    (
+                        denormalize(val_high_resolution.detach().cpu()),
+                        denormalize(upsampler(val_low_resolution).detach().cpu()),
+                        denormalize(val_fake_high_res.detach().cpu()),
+                    ),
+                    2,
+                )
+                save_image(
+                    result_val,
+                    os.path.join(self.sample_dir, f"Validation_{epoch}_{idx}.png"),
+                    nrow=8,
+                    normalize=False,
+                )
 
             val_epoch_psnr = round(sum(val_batch_psnr) / len(val_batch_psnr), 4)
             val_epoch_ssim = round(sum(val_batch_ssim) / len(val_batch_ssim), 4)
+            val_epoch_fid = round(sum(val_batch_FID) / len(val_batch_FID), 4)
 
-            ups_epoch_psnr = round(sum(ups_batch_psnr) / len(ups_batch_psnr), 4)
-            ups_epoch_ssim = round(sum(ups_batch_ssim) / len(ups_batch_ssim), 4)
+            if not already_calculated_bicubic:
+                ups_epoch_psnr = round(sum(ups_batch_psnr) / len(ups_batch_psnr), 4)
+                ups_epoch_ssim = round(sum(ups_batch_ssim) / len(ups_batch_ssim), 4)
+                ups_epoch_FID = round(sum(ups_batch_FID) / len(ups_batch_FID), 4)
+                already_calculated_bicubic = True
+
+            # log validation psnr, ssim
+            wandb.log(
+                {
+                    "epoch": epoch + 1,
+                    "valid_psnr": val_epoch_psnr,
+                    "valid_ssim": val_epoch_ssim,
+                    "valid_fid": val_epoch_fid,
+                }
+            )
+            # log validation image 0
+            wandb.log(
+                {
+                    "validation_images": wandb.Image(
+                        os.path.join(self.sample_dir, f"Validation_{epoch}_0.png")
+                    )
+                }
+            )
+
+            if val_epoch_fid < best_val_fid:
+                best_val_fid = val_epoch_fid
+                SAVE = True
 
             if val_epoch_psnr > best_val_psnr:
                 best_val_psnr = val_epoch_psnr
@@ -404,44 +485,40 @@ class Trainer:
             self.metrics["PSNR"].append(val_epoch_psnr)
             self.metrics["SSIM"].append(val_epoch_ssim)
 
-            print(f"Validation Set: PSNR: {val_epoch_psnr}, SSIM:{val_epoch_ssim}")
-            print(f"Bicubic Ups: PSNR: {ups_epoch_psnr}, SSIM:{ups_epoch_ssim}")
+            print(
+                f"Validation Set: PSNR: {val_epoch_psnr}, SSIM: {val_epoch_ssim}, FID: {val_epoch_fid}"
+            )
+            print(
+                f"Bicubic Ups: PSNR: {ups_epoch_psnr}, SSIM: {ups_epoch_ssim}, FID: {ups_epoch_FID}"
+            )
 
-            result_val = torch.cat(
-                (
-                    denormalize(val_high_resolution.detach().cpu()),
-                    denormalize(upsampler(val_low_resolution).detach().cpu()),
-                    denormalize(val_fake_high_res.detach().cpu()),
-                ),
-                2,
+            del (
+                val_fid,
+                val_psnr,
+                val_ssim,
+                val_epoch_psnr,
+                val_epoch_ssim,
+                val_epoch_fid,
+                val_low_resolution,
+                val_fake_high_res,
+                val_high_resolution,
             )
-            save_image(
-                result_val,
-                os.path.join(self.sample_dir, f"Validation_{epoch}.png"),
-                nrow=8,
-                normalize=False,
-            )
-            # print(result[0][:, 512:, :].min(), result[0][:, 512:, :].max())
+
             torch.cuda.empty_cache()
             gc.collect()
 
             models_dict = {
                 "next_epoch": epoch + 1,
-                f"generator_dict_{epoch}": self.generator.state_dict(),
-                f"optim_gen_{epoch}": self.optimizer_generator.state_dict(),
-                f"steps_completed": steps_completed,
-                f"metrics_till_{epoch}": self.metrics,
-                f"grad_scaler_gen_{epoch}": self.scaler_gen.state_dict(),
+                f"generator_dict": self.generator.state_dict(),
+                f"optim_gen": self.optimizer_generator.state_dict(),
+                f"grad_scaler_gen": self.scaler_gen.state_dict(),
+                f"metrics": self.metrics,
             }
 
             if not self.is_psnr_oriented:
-                models_dict[
-                    f"discriminator_dict_{epoch}"
-                ] = self.discriminator.state_dict()
-                models_dict[
-                    f"optim_dis_{epoch}"
-                ] = self.optimizer_discriminator.state_dict()
-                models_dict[f"grad_scaler_dis_{epoch}"] = self.scaler_dis.state_dict()
+                models_dict[f"discriminator_dict"] = self.discriminator.state_dict()
+                models_dict[f"optim_dis"] = self.optimizer_discriminator.state_dict()
+                models_dict[f"grad_scaler_dis"] = self.scaler_dis.state_dict()
 
             save_name = f"checkpoint_{epoch}.tar"
 
@@ -462,7 +539,7 @@ class Trainer:
                 ]
                 save_name = f"best_checkpoint_{epoch}.tar"
                 print(
-                    f"Best val scores  till epoch {epoch} -> PSNR: {best_val_psnr}, SSIM: {best_val_ssim}"
+                    f"Best val scores  till epoch {epoch} -> PSNR: {best_val_psnr}, SSIM: {best_val_ssim}, , FID: {best_val_fid}"
                 )
 
             if save_name.startswith("checkpoint"):
@@ -487,6 +564,10 @@ class Trainer:
 
             torch.cuda.empty_cache()
             gc.collect()
+
+        wandb.run.summary["valid_psnr"] = best_val_psnr
+        wandb.run.summary["valid_ssim"] = best_val_ssim
+        wandb.run.summary["valid_fid"] = best_val_fid
 
         return self.metrics
 
@@ -519,8 +600,7 @@ class Trainer:
         )
 
         self.scaler_gen = torch.cuda.amp.GradScaler()
-        self.scaler_dis_real = torch.cuda.amp.GradScaler()
-        self.scaler_dis_fake = torch.cuda.amp.GradScaler()
+        self.scaler_dis = torch.cuda.amp.GradScaler()
 
         self.load_model()
 
@@ -536,56 +616,34 @@ class Trainer:
 
         checkpoint = torch.load(checkpoint_path, map_location=self.device)
 
-        self.generator.load_state_dict(
-            checkpoint[f"generator_dict_{self.start_epoch-1}"]
-        )
+        self.generator.load_state_dict(checkpoint[f"generator_dict"])
         print("Generator weights loaded.")
 
         if self.load_previous_opt:
-            self.optimizer_generator.load_state_dict(
-                checkpoint[f"optim_gen_{self.start_epoch-1}"]
-            )
+            self.optimizer_generator.load_state_dict(checkpoint[f"optim_gen"])
             print("Generator Optimizer state loaded")
 
-            self.scaler_gen.load_state_dict(
-                checkpoint[f"grad_scaler_gen_{self.start_epoch-1}"]
-            )
+            self.scaler_gen.load_state_dict(checkpoint[f"grad_scaler_gen"])
             print("Grad Scaler - Generator loaded")
 
             try:
-                self.discriminator.load_state_dict(
-                    checkpoint[f"discriminator_dict_{self.start_epoch-1}"]
-                )
+                self.discriminator.load_state_dict(checkpoint[f"discriminator_dict"])
                 print("Discriminator weights loaded.")
-                self.optimizer_discriminator.load_state_dict(
-                    checkpoint[f"optim_dis_{self.start_epoch-1}"]
-                )
+                self.optimizer_discriminator.load_state_dict(checkpoint[f"optim_dis"])
                 print("Discriminator optimizer loaded.")
 
-                self.scaler_dis.load_state_dict(
-                    checkpoint[f"grad_scaler_dis_{self.start_epoch-1}"]
-                )
+                self.scaler_dis.load_state_dict(checkpoint[f"grad_scaler_dis"])
                 print("Grad Scaler - Discriminator loaded")
             except:
                 pass
 
-        self.metrics["dis_loss"] = checkpoint[f"metrics_till_{self.start_epoch-1}"][
-            "dis_loss"
-        ]
-        self.metrics["gen_loss"] = checkpoint[f"metrics_till_{self.start_epoch-1}"][
-            "gen_loss"
-        ]
-        self.metrics["per_loss"] = checkpoint[f"metrics_till_{self.start_epoch-1}"][
-            "per_loss"
-        ]
-        self.metrics["con_loss"] = checkpoint[f"metrics_till_{self.start_epoch-1}"][
-            "con_loss"
-        ]
-        self.metrics["adv_loss"] = checkpoint[f"metrics_till_{self.start_epoch-1}"][
-            "adv_loss"
-        ]
-        self.metrics["PSNR"] = checkpoint[f"metrics_till_{self.start_epoch-1}"]["PSNR"]
-        self.metrics["SSIM"] = checkpoint[f"metrics_till_{self.start_epoch-1}"]["SSIM"]
+        self.metrics["dis_loss"] = checkpoint[f"metrics"]["dis_loss"]
+        self.metrics["gen_loss"] = checkpoint[f"metrics"]["gen_loss"]
+        self.metrics["per_loss"] = checkpoint[f"metrics"]["per_loss"]
+        self.metrics["con_loss"] = checkpoint[f"metrics"]["con_loss"]
+        self.metrics["adv_loss"] = checkpoint[f"metrics"]["adv_loss"]
+        self.metrics["PSNR"] = checkpoint[f"metrics"]["PSNR"]
+        self.metrics["SSIM"] = checkpoint[f"metrics"]["SSIM"]
         self.start_epoch = checkpoint["next_epoch"]
 
         temp = []
@@ -601,9 +659,8 @@ class Trainer:
             temp.append(200)
 
         self.decay_iter = temp
-        print(self.decay_iter)
+        print("Decay_iter:", self.decay_iter)
 
-        print(f'Mini_batch completed: {checkpoint["steps_completed"]}')
         print(f"Checkpoint: {self.start_epoch-1} loaded")
 
 

@@ -1,9 +1,9 @@
-# Normalization parameters for pre-trained PyTorch models
 from skimage.metrics import peak_signal_noise_ratio as psnr
 from skimage.metrics import structural_similarity as ssim
 import numpy as np
-import cv2
 import torch
+from scipy import linalg
+from torch.nn.functional import adaptive_avg_pool2d
 
 
 def denormalize(tensors):
@@ -35,14 +35,13 @@ def _ssim(ground, gen):
 
 def cal_img_metrics(generated, ground_truth):
 
-    generated = generated.clone().cpu()
-    ground_truth = ground_truth.clone().cpu()
+    generated = generated.clone().detach().cpu()
+    ground_truth = ground_truth.clone().detach().cpu()
 
     scores_PSNR = []
     scores_SSIM = []
     generated = denormalize(generated).permute(0, 2, 3, 1).numpy() * 255.0
     ground_truth = denormalize(ground_truth).permute(0, 2, 3, 1).numpy() * 255.0
-
 
     for i in range(len(ground_truth)):
         ground = ground_truth[i]
@@ -61,123 +60,89 @@ def cal_img_metrics(generated, ground_truth):
     )
 
 
-# def denormalize(tensors):
-#     """Normalization parameters for pre-trained PyTorch models
-#      Denormalizes image tensors using mean and std """
-#     mean = np.array([0.485, 0.456, 0.406])
-#     std = np.array([0.229, 0.224, 0.225])
-
-#     tensors = tensors.clone().cpu().detach()
-#     tensors = tensors.permute(0, 2, 3, 1).numpy()
-#     # row, height, width, channel
-
-#     with torch.no_grad():
-#         for image in tensors:
-#             for c in range(3):
-#                 np.add(np.multiply(image[:, :, c], std[c]), mean[c])
-
-#     # row, channel, height, width
-#     tensors = np.moveaxis(tensors, (0, 3, 1, 2), (0, 1, 2, 3))
-#     # print(tensors.shape)
-#     return torch.from_numpy(np.clip(tensors, 0, 255))
-
-# def ssim(img1, img2):
-#     C1 = (0.01 * 255) ** 2
-#     C2 = (0.03 * 255) ** 2
-#
-#     img1 = img1.astype(np.float64)
-#     img2 = img2.astype(np.float64)
-#     kernel = cv2.getGaussianKernel(11, 1.5)
-#     window = np.outer(kernel, kernel.transpose())
-#
-#     mu1 = cv2.filter2D(img1, -1, window)[5:-5, 5:-5]  # valid
-#     mu2 = cv2.filter2D(img2, -1, window)[5:-5, 5:-5]
-#     mu1_sq = mu1 ** 2
-#     mu2_sq = mu2 ** 2
-#     mu1_mu2 = mu1 * mu2
-#     sigma1_sq = cv2.filter2D(img1 ** 2, -1, window)[5:-5, 5:-5] - mu1_sq
-#     sigma2_sq = cv2.filter2D(img2 ** 2, -1, window)[5:-5, 5:-5] - mu2_sq
-#     sigma12 = cv2.filter2D(img1 * img2, -1, window)[5:-5, 5:-5] - mu1_mu2
-#
-#     ssim_map = ((2 * mu1_mu2 + C1) * (2 * sigma12 + C2)) / (
-#         (mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2)
-#     )
-#     return ssim_map.mean()
-#
-#
-# def calculate_ssim(img1, img2):
-#     """calculate SSIM
-#     the same outputs as MATLAB's
-#     img1, img2: [0, 255]
-#     """
-#     if not img1.shape == img2.shape:
-#         raise ValueError("Input images must have the same dimensions.")
-#     if img1.ndim == 2:
-#         return ssim(img1, img2)
-#     elif img1.ndim == 3:
-#         if img1.shape[2] == 3:
-#             ssims = []
-#             for i in range(3):
-#                 ssims.append(ssim(img1, img2))
-#             return np.array(ssims).mean()
-#         elif img1.shape[2] == 1:
-#             return ssim(np.squeeze(img1), np.squeeze(img2))
-#     else:
-#         raise ValueError("Wrong input image dimensions.")
-#
-#
-# def calculate_psnr(img1, img2):
-#     # img1 and img2 have range [0, 255]
-#     img1 = img1.astype(np.float64)
-#     img2 = img2.astype(np.float64)
-#     mse = np.mean((img1 - img2) ** 2)
-#     if mse == 0:
-#         return float("inf")
-#     return 20 * np.log10(255.0 / np.sqrt(mse))
-#
-#
-# def cal_img_metrics(gen, ground):
-#     with torch.no_grad():
-#         scores_PSNR = []
-#         scores_SSIM = []
-#         gen = denormalize(gen).permute(0, 2, 3, 1).numpy() * 255.0
-#         ground = denormalize(ground).permute(0, 2, 3, 1).numpy() * 255.0
-#
-#         # gen = gen.permute(0, 2, 3, 1).numpy() * 255.0
-#         # ground = ground.permute(0, 2, 3, 1).numpy() * 255.0
-#
-#         for generated, ground_truth in zip(gen, ground):
-#             # print(ground_truth.max() - ground_truth.min())
-#             psnr_ = calculate_psnr(generated, ground_truth)
-#             ssim_ = calculate_ssim(generated, ground_truth)
-#
-#             scores_PSNR.append(psnr_)
-#             scores_SSIM.append(ssim_)
-#
-#         return (
-#             round(sum(scores_PSNR) / len(scores_PSNR), 3),
-#             round(sum(scores_SSIM) / len(scores_SSIM), 3),
-#         )
+# Taken from https://www.kaggle.com/ibtesama/gan-in-pytorch-with-fid
 
 
-# if __name__ == '__main__':
+def calculate_activation_statistics(images, model, dims=2048, cuda=False):
+    model.eval()
+    act = np.empty((len(images), dims))
 
-#     image_path_lr = r"images/lr/00000.png"
-#     image_path_hr = r"images/hr/00000.png"
+    if cuda:
+        if images.device != "cuda":
+            images = images.to("cuda")
+    else:
+        images = images
 
-#     image_1 = cv2.imread(image_path_lr, cv2.IMREAD_COLOR)
-#     image_1 = cv2.cvtColor(image_1, cv2.COLOR_BGR2RGB)
+    pred = model(images)[0]
 
-#     image_2 = cv2.imread(image_path_hr, cv2.IMREAD_COLOR)
-#     image_2 = cv2.cvtColor(image_2, cv2.COLOR_BGR2RGB)
-#     # print(help(cv2.resize))
-#     image_2 = cv2.resize(image_2, (128, 128),
-#                          interpolation=cv2.INTER_CUBIC)
+    # If model output is not scalar, apply global spatial average pooling.
+    # This happens if you choose a dimensionality not equal 2048.
+    if pred.size(2) != 1 or pred.size(3) != 1:
+        pred = adaptive_avg_pool2d(pred, output_size=(1, 1))
 
-#     image_1 = image_1.astype(np.float32)
-#     image_1 = image_1 // 255.0
+    act = pred.cpu().data.numpy().reshape(pred.size(0), -1)
 
-#     image_2 = image_2.astype(np.float32)
-#     image_2 = image_2 // 255.0
+    mu = np.mean(act, axis=0)
+    sigma = np.cov(act, rowvar=False)
 
-#     print(cal_img_metrics(image_1, image_2))
+    images = images.cpu()
+    return mu, sigma
+
+
+def calculate_frechet_distance(mu1, sigma1, mu2, sigma2, eps=1e-6):
+    """Numpy implementation of the Frechet Distance.
+    The Frechet distance between two multivariate Gaussians X_1 ~ N(mu_1, C_1)
+    and X_2 ~ N(mu_2, C_2) is
+            d^2 = ||mu_1 - mu_2||^2 + Tr(C_1 + C_2 - 2*sqrt(C_1*C_2)).
+    """
+
+    mu1 = np.atleast_1d(mu1)
+    mu2 = np.atleast_1d(mu2)
+
+    sigma1 = np.atleast_2d(sigma1)
+    sigma2 = np.atleast_2d(sigma2)
+
+    assert (
+        mu1.shape == mu2.shape
+    ), "Training and test mean vectors have different lengths"
+    assert (
+        sigma1.shape == sigma2.shape
+    ), "Training and test covariances have different dimensions"
+
+    diff = mu1 - mu2
+
+    covmean, _ = linalg.sqrtm(sigma1.dot(sigma2), disp=False)
+    if not np.isfinite(covmean).all():
+        msg = (
+            "fid calculation produces singular product; "
+            "adding %s to diagonal of cov estimates"
+        ) % eps
+        print(msg)
+        offset = np.eye(sigma1.shape[0]) * eps
+        covmean = linalg.sqrtm((sigma1 + offset).dot(sigma2 + offset))
+
+    if np.iscomplexobj(covmean):
+        if not np.allclose(np.diagonal(covmean).imag, 0, atol=1e-3):
+            m = np.max(np.abs(covmean.imag))
+            raise ValueError("Imaginary component {}".format(m))
+        covmean = covmean.real
+
+    tr_covmean = np.trace(covmean)
+
+    return diff.dot(diff) + np.trace(sigma1) + np.trace(sigma2) - 2 * tr_covmean
+
+
+def cal_fretchet(images_real, images_fake, fid_model, dims=None):
+    gpu_ = torch.cuda.is_available()
+
+    mu_1, std_1 = calculate_activation_statistics(
+        images_real, fid_model, dims=dims, cuda=gpu_
+    )
+    mu_2, std_2 = calculate_activation_statistics(
+        images_fake, fid_model, dims=dims, cuda=gpu_
+    )
+
+    """get fretched distance"""
+    fid_value = calculate_frechet_distance(mu_1, std_1, mu_2, std_2)
+    return fid_value
+
