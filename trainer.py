@@ -77,7 +77,7 @@ class Trainer:
         Tensor = torch.cuda.FloatTensor if torch.cuda.is_available() else torch.Tensor
 
         # FID score
-        FID_DIM = 2048
+        FID_DIM = 768
         block_idx = InceptionV3.BLOCK_INDEX_BY_DIM[FID_DIM]
         fid_model = InceptionV3([block_idx])
         fid_model.to(self.device)
@@ -337,7 +337,7 @@ class Trainer:
                 )
                 wandb.log(
                     {
-                        "epoch": epoch + 1,
+                        "epoch": epoch,
                         "Dis_loss": np.round(np.array(epoch_dis_loss).mean(), 4),
                         "Gen_loss": np.round(np.array(epoch_gen_loss).mean(), 4),
                         "Con_loss": np.round(np.array(epoch_con_loss).mean(), 4),
@@ -355,7 +355,7 @@ class Trainer:
                 )
                 wandb.log(
                     {
-                        "epoch": epoch + 1,
+                        "epoch": epoch,
                         "Gen_loss": np.round(np.array(epoch_gen_loss).mean(), 4),
                         "Con_loss": np.round(np.array(epoch_con_loss).mean(), 4),
                     }
@@ -424,9 +424,6 @@ class Trainer:
                         ups_batch_FID.append(ups_fid)
 
                 # visualization
-                val_fake_high_res = val_fake_high_res.cpu()
-                val_high_resolution = val_high_resolution.cpu()
-                val_low_resolution = val_low_resolution.cpu()
                 result_val = torch.cat(
                     (
                         denormalize(val_high_resolution.detach().cpu()),
@@ -455,7 +452,7 @@ class Trainer:
             # log validation psnr, ssim
             wandb.log(
                 {
-                    "epoch": epoch + 1,
+                    "epoch": epoch,
                     "valid_psnr": val_epoch_psnr,
                     "valid_ssim": val_epoch_ssim,
                     "valid_fid": val_epoch_fid,
