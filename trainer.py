@@ -321,6 +321,11 @@ class Trainer:
                         nrow=8,
                         normalize=False,
                     )
+                    wandb.log(
+                        {
+                            f"training_images_ESR_{step+1}": wandb.Image(os.path.join(self.sample_dir, str(epoch), f"ESR_{step+1}.png"))
+                        }
+                    )  
 
                 torch.cuda.empty_cache()
                 gc.collect()
@@ -360,6 +365,7 @@ class Trainer:
                         "Con_loss": np.round(np.array(epoch_con_loss).mean(), 4),
                     }
                 )
+                
 
             if not skip_gen_lr_sched:
                 self.lr_scheduler_generator.step()
@@ -461,12 +467,19 @@ class Trainer:
             # log validation image 0
             wandb.log(
                 {
-                    "validation_images": wandb.Image(
+                    "validation_images_1": wandb.Image(
                         os.path.join(self.sample_dir, f"Validation_{epoch}_0.png")
+                    ),
+                 "validation_images_2": wandb.Image(
+                        os.path.join(self.sample_dir, f"Validation_{epoch}_1.png")
+                    ),
+                 "validation_images_3": wandb.Image(
+                        os.path.join(self.sample_dir, f"Validation_{epoch}_2.png")
                     )
                 }
             )
-
+            
+            
             if val_epoch_fid < best_val_fid:
                 best_val_fid = val_epoch_fid
                 SAVE = True
