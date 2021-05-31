@@ -332,10 +332,10 @@ class InceptionV3(nn.Module):
 if __name__ == "__main__":
     from torchsummary import summary
 
-    model = Generator(num_res_blocks=23, nf=64, gc=32)
-    model._mrsa_init(model.layers_)
+    #model = Generator(num_res_blocks=23, nf=64, gc=32)
+    #model._mrsa_init(model.layers_)
 
-    summary(model, (3, 64, 64))
+    #summary(model, (3, 64, 64))
 
     model = Discriminator((3, 256, 256))
     summary(model, (3, 256, 256))
